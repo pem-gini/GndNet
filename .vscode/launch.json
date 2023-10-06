@@ -1,0 +1,42 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "evaluate Semantic",
+            "type": "python",
+            "request": "launch",
+            "program": "evaluate_SemanticKITTI.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--resume",
+                "trained_models/checkpoint.pth.tar",
+                "-v",
+                "-gnd",
+                "--data_dir",
+                "data/prediction/seq_000/"
+            ]
+        },
+        {
+            "name": "predict ground",
+            "type": "python",
+            "request": "launch",
+            "program": "predict_ground.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--config",
+                "config/config_open3dExample.yaml",
+                "--resume",
+                "trained_models/checkpoint.pth.tar",
+                "-v",
+                "-gnd",
+                "--pcl",
+                "depth_image_to_pcl/cloud0.pcd"
+            ]
+        }
+    ]
+}
