@@ -5,8 +5,6 @@ Author: Anshul Paigwar
 email: p.anshul6@gmail.com
 """
 
-
-
 import argparse
 import os
 import shutil
@@ -33,7 +31,7 @@ import matplotlib.pyplot as plt
 import numba
 from numba import jit,types
 
-
+import open3d as o3d
 
 use_cuda = torch.cuda.is_available()
 
@@ -79,25 +77,19 @@ cfg.batch_size = 1
 if args.visualize:
 
     # Ros Includes
-    import rospy
+    import sys
+    import rclpy
     from utils.ros_utils import np2ros_pub_2, gnd_marker_pub
     from sensor_msgs.msg import PointCloud2
     from visualization_msgs.msg import Marker
 
-    rospy.init_node('gnd_data_provider', anonymous=True)
-    pcl_pub = rospy.Publisher("/kitti/velo/pointcloud", PointCloud2, queue_size=10)
-    marker_pub_2 = rospy.Publisher("/kitti/gnd_marker_pred", Marker, queue_size=10)
+    rclpy.init(args=sys.argv)
+    node = rclpy.create_node('gnd_data_provider')
+    pcl_pub = node.create_publisher(PointCloud2, "/kitti/velo/pointcloud", 10)
+    marker_pub_2 = node.create_publisher(Marker, "/kitti/gnd_marker_pred", 10)
 
-
-
-
-
-
-model = GroundEstimatorNet(cfg).cuda()
+model = GroundEstimatorNet(cfg).cpu()
 optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum=0.9, weight_decay=0.0005)
-
-
-
 
 def get_GndSeg(sem_label, GndClasses):
     index = np.isin(sem_label, GndClasses)
@@ -106,8 +98,6 @@ def get_GndSeg(sem_label, GndClasses):
     index = np.isin(sem_label, [0,1])
     GndSeg[index] = -1
     return GndSeg
-
-
 
 @jit(nopython=True)
 def remove_outliers(pred_GndSeg, GndSeg): # removes the points outside grid and unlabled points
@@ -119,9 +109,6 @@ def remove_outliers(pred_GndSeg, GndSeg): # removes the points outside grid and 
     pred_GndSeg = pred_GndSeg[index]
     GndSeg = GndSeg[index]
     return 1-pred_GndSeg, 1-GndSeg
-
-
-
 
 @jit(nopython=True)
 def _shift_cloud(cloud, height):
@@ -148,10 +135,10 @@ def InferGround(cloud):
     cloud = _shift_cloud(cloud[:,:4], cfg.lidar_height)
 
     voxels, coors, num_points = points_to_voxel(cloud, cfg.voxel_size, cfg.pc_range, cfg.max_points_voxel, True, cfg.max_voxels)
-    voxels = torch.from_numpy(voxels).float().cuda()
+    voxels = torch.from_numpy(voxels).float().cpu()
     coors = torch.from_numpy(coors)
-    coors = F.pad(coors, (1,0), 'constant', 0).float().cuda()
-    num_points = torch.from_numpy(num_points).float().cuda()
+    coors = F.pad(coors, (1,0), 'constant', 0).float().cpu()
+    num_points = torch.from_numpy(num_points).float().cpu()
     with torch.no_grad():
             output = model(voxels, coors, num_points)
     return output
@@ -177,9 +164,26 @@ def evaluate_SemanticKITTI(data_dir):
     prec_score = 0
     recall_score = 0
     print(len(frames))
-    for f in range(len(frames)):
+    for f in range(len(frames)*2):
+        if f % 2 == 1:
+            with_zero = True
+            f = (f-1)/2
+        else:
+            with_zero = False
+            f = f / 2
         points_path = os.path.join(velodyne_dir, "%06d.bin" % f)
         points = np.fromfile(points_path, dtype=np.float32).reshape(-1, 4)
+        
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points[:,:3])
+        # voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=1)
+        # o3d.visualization.draw_geometries([voxel_grid])
+
+        # exit()
+
+        print("%06d.bin - %d" % (f,with_zero))
+        if with_zero:
+            points[:,3] = 0
 
         label_path = os.path.join(label_dir, "%06d.label" % f)
         sem_label = np.fromfile(label_path, dtype=np.uint32)
@@ -188,13 +192,13 @@ def evaluate_SemanticKITTI(data_dir):
         pred_gnd = InferGround(points)
         pred_gnd = pred_gnd.cpu().numpy()
         # TODO: Remove the points which are very below the ground
-        pred_GndSeg = segment_cloud(points.copy(),np.asarray(cfg.grid_range), cfg.voxel_size[0], elevation_map = pred_gnd.T, threshold = 0.2)
+        pred_GndSeg = segment_cloud(points.copy(),np.asarray(cfg.grid_range), cfg.voxel_size[0], elevation_map = pred_gnd.T, threshold = 0.0)
         GndSeg = get_GndSeg(sem_label, GndClasses = [40, 44, 48, 49,60,72])
         
         if args.visualize:
-            np2ros_pub_2(points, pcl_pub, None, pred_GndSeg)
+            np2ros_pub_2(node, points, pcl_pub, None, pred_GndSeg)
             if args.visualize_gnd:
-                gnd_marker_pub(pred_gnd, marker_pub_2, cfg, color = "red")
+                gnd_marker_pub(node, pred_gnd, marker_pub_2, cfg, color = "red")
             # pdb.set_trace()
 
         pred_GndSeg, GndSeg = remove_outliers(pred_GndSeg, GndSeg)
@@ -238,10 +242,6 @@ def evaluate_SemanticKITTI(data_dir):
 
 
 
-
-
-
-
 def main():
     # rospy.init_node('pcl2_pub_example', anonymous=True)
     global args
@@ -249,7 +249,7 @@ def main():
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
+            checkpoint = torch.load(args.resume, map_location=torch.device('cpu'))
             args.start_epoch = checkpoint['epoch']
             lowest_loss = checkpoint['lowest_loss']
             model.load_state_dict(checkpoint['state_dict'])

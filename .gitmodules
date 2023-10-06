@@ -1,0 +1,3 @@
+[submodule "ros2_numpy"]
+	path = ros2_numpy
+	url = git@github.com:Box-Robotics/ros2_numpy.git

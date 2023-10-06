@@ -28,13 +28,7 @@ from scipy.spatial import Delaunay
 
 import numba
 from numba import jit,types
-
-
-
-
-
-
-
+import ros2_numpy.ros2_numpy as ros2_numpy
 
 
 def visualize_gnd_3D(gnd_label , fig, cfg):
@@ -51,8 +45,6 @@ def visualize_gnd_3D(gnd_label , fig, cfg):
     sub_plt.set_zlim(-10, 10)
     plt.draw()
     plt.pause(0.01)
-
-
 
 
 # def visualize_2D(gnd_label, points ,fig, cfg):
@@ -98,8 +90,6 @@ def extract_pc_in_box2d(pc, box2d):
     return pc[box2d_roi_inds,:]
 
 
-
-
 # @jit(nopython=True)
 def random_sample_numpy(cloud, N):
     if(cloud.size > 0):
@@ -113,12 +103,10 @@ def random_sample_numpy(cloud, N):
         sampled_cloud = np.ones((N,3))
     return sampled_cloud
 
-
-
 # @jit(nopython=True)
 def crop_cloud_msg(cloud_msg, cfg, shift_cloud = False, sample_cloud = True):
     # Convert Ros pointcloud2 msg to numpy array
-    pc = ros_numpy.numpify(cloud_msg)
+    pc = ros2_numpy.numpify(cloud_msg)
     points=np.zeros((pc.shape[0],4))
     points[:,0]=pc['x']
     points[:,1]=pc['y']
@@ -148,7 +136,7 @@ def shift_cloud_func(cloud, height):
 
 def cloud_msg_to_numpy(cloud_msg, cfg, shift_cloud = False):
     # Convert Ros pointcloud2 msg to numpy array
-    pc = ros_numpy.numpify(cloud_msg)
+    pc = ros2_numpy.numpify(cloud_msg)
     points=np.zeros((pc.shape[0],4))
     points[:,0]=pc['x']
     points[:,1]=pc['y']
@@ -185,8 +173,6 @@ def segment_cloud(points, grid_size, voxel_size, elevation_map, threshold = 0.2)
             rgb[i] = -1 # outside range
     return rgb
 
-
-
 @jit(nopython=True)
 def lidar_to_img(points, grid_size, voxel_size, fill):
     # pdb.set_trace()
@@ -206,8 +192,6 @@ def lidar_to_img(points, grid_size, voxel_size, fill):
             if (0 < lidar_data[i,0] < lidar_img.shape[0]) and (0 < lidar_data[i,1] < lidar_img.shape[1]):
                 lidar_img[lidar_data[i,0],lidar_data[i,1]] = fill
     return lidar_img
-
-
 
 
 @jit(nopython=True)

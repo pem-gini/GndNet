@@ -9,15 +9,11 @@ email: p.anshul6@gmail.com
 
 import argparse
 import os
-import shutil
 import yaml
 import time
-import math
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 import numpy as np
 
 
@@ -29,7 +25,8 @@ from utils.ros_utils import np2ros_pub_2, gnd_marker_pub
 import ipdb as pdb
 
 # Ros Includes
-import rospy
+import rclpy
+import sys
 from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import Marker
 
@@ -39,11 +36,11 @@ if use_cuda:
     print('setting gpu on gpu_id: 0') #TODO: find the actual gpu id being used
 
 
-
-rospy.init_node('gnd_data_provider', anonymous=True)
-pcl_pub = rospy.Publisher("/kitti/gndnet_segcloud", PointCloud2, queue_size=10)
-marker_pub_1 = rospy.Publisher("/kitti/ground_marker", Marker, queue_size=10)
-marker_pub_2 = rospy.Publisher("/kitti/gnd_marker_pred", Marker, queue_size=10)
+rclpy.init(args=sys.argv)
+node = rclpy.create_node('gnd_data_provider')
+pcl_pub = node.create_publisher(PointCloud2,"/kitti/gndnet_segcloud", 10)
+marker_pub_1 = node.create_publisher(Marker,"/kitti/ground_marker", 10)
+marker_pub_2 = node.create_publisher(Marker,"/kitti/gnd_marker_pred", 10)
 
 
 #############################################xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx#######################################
@@ -74,13 +71,13 @@ cfg.batch_size = 1
 #############################################xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx#######################################
 
 
-model = GroundEstimatorNet(cfg).cuda()
+model = GroundEstimatorNet(cfg).cpu() #TODO: Change back to .cuda()
 
 
 if args.resume:
     if os.path.isfile(args.resume):
         print("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, map_location=torch.device('cpu')) #TODO: Remove cpu location
         model.load_state_dict(checkpoint['state_dict'])
         print("=> loaded checkpoint '{}' (epoch {})"
               .format(args.resume, checkpoint['epoch']))
@@ -88,8 +85,6 @@ if args.resume:
         print("=> no checkpoint found at '{}'".format(args.resume))
 else:
     raise Exception('please specify checkpoint to load')
-
-
 
 # switch to evaluate mode
 model.eval()
@@ -105,15 +100,13 @@ def callback(cloud_msg):
     # print("np_conversion_time: ", np_conversion- start_time)
 
     voxels, coors, num_points = points_to_voxel(cloud, cfg.voxel_size, cfg.pc_range, cfg.max_points_voxel, True, cfg.max_voxels)
-    voxels = torch.from_numpy(voxels).float().cuda()
+    voxels = torch.from_numpy(voxels).float().cpu() #TODO: .cuda()
     coors = torch.from_numpy(coors)
-    coors = F.pad(coors, (1,0), 'constant', 0).float().cuda()
-    num_points = torch.from_numpy(num_points).float().cuda()
+    coors = F.pad(coors, (1,0), 'constant', 0).float().cpu() #TODO: .cuda()
+    num_points = torch.from_numpy(num_points).float().cpu() #TODO: .cuda()
 
     # cloud_process = time.time()
     # print("cloud_process: ", cloud_process - np_conversion)
-
-
 
     with torch.no_grad():
             output = model(voxels, coors, num_points)
@@ -126,23 +119,16 @@ def callback(cloud_msg):
     # print("total_time: ", seg_time - np_conversion)
     # print()
     # pdb.set_trace()
-    gnd_marker_pub(output.cpu().numpy(),marker_pub_2, cfg, color = "red")
-    np2ros_pub_2(cloud, pcl_pub, None, pred_GndSeg)
+    gnd_marker_pub(node, output.cpu().numpy(),marker_pub_2, cfg, color = "red")
+    np2ros_pub_2(node, cloud, pcl_pub, None, pred_GndSeg)
     # vis_time = time.time()
     # print("vis_time: ", vis_time - model_time)
 
 
-
 def listener():
-    rospy.Subscriber("/kitti/velo/pointcloud", PointCloud2, callback, queue_size = 1)
+    node.create_subscription(PointCloud2, "/kitti/velo/pointcloud", callback, 1)
     # spin() simply keeps python from exiting until this node is stopped
-    rospy.spin()
-
-
-
-
-
-
+    rclpy.spin()
 
 if __name__ == '__main__':
     listener()

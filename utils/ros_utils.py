@@ -25,15 +25,13 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Ros Includes
-import rospy
 # from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from sensor_msgs.msg import PointCloud2
 import std_msgs.msg
 from visualization_msgs.msg import Marker,MarkerArray
 from geometry_msgs.msg import Point
 
-import ros_numpy
+import ros2_numpy.ros2_numpy as ros2_numpy
 import shapely.geometry
 from scipy.spatial import Delaunay
 
@@ -41,20 +39,13 @@ import numba
 from numba import jit,types
 
 
-
-
-
-
-
-
-
-
-def gnd_marker_pub(gnd_label, marker_pub, cfg, color = "red"):
+def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red"):
     length = int(cfg.grid_range[2] - cfg.grid_range[0]) # x direction
     width = int(cfg.grid_range[3] - cfg.grid_range[1])    # y direction
+    print(type(ros_node.get_clock().now()))
     gnd_marker = Marker()
-    gnd_marker.header.frame_id = "/kitti/base_link"
-    gnd_marker.header.stamp = rospy.Time.now()
+    gnd_marker.header.frame_id = "map"
+    gnd_marker.header.stamp = ros_node.get_clock().now().to_msg()
     gnd_marker.type = gnd_marker.LINE_LIST
     gnd_marker.action = gnd_marker.ADD
     gnd_marker.scale.x = 0.05
@@ -76,56 +67,45 @@ def gnd_marker_pub(gnd_label, marker_pub, cfg, color = "red"):
     for j in range(gnd_label.shape[0]):
         for i in range(gnd_label.shape[1]):
             pt1 = Point()
-            pt1.x = i + cfg.grid_range[0]
-            pt1.y = j + cfg.grid_range[1]
-            pt1.z = gnd_label[j,i]
+            pt1.x = float(i + cfg.grid_range[0])
+            pt1.y = float(j + cfg.grid_range[1])
+            pt1.z = float(gnd_label[j,i])
 
             if j>0 :
                 pt2 = Point()
-                pt2.x = i + cfg.grid_range[0]
-                pt2.y = j-1 +cfg.grid_range[1]
-                pt2.z = gnd_label[j-1, i]
+                pt2.x = float(i + cfg.grid_range[0])
+                pt2.y = float(j-1 +cfg.grid_range[1])
+                pt2.z = float(gnd_label[j-1, i])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if i>0 :
                 pt2 = Point()
-                pt2.x = i -1 + cfg.grid_range[0]
-                pt2.y = j + cfg.grid_range[1]
-                pt2.z = gnd_label[j, i-1]
+                pt2.x = float(i -1 + cfg.grid_range[0])
+                pt2.y = float(j + cfg.grid_range[1])
+                pt2.z = float(gnd_label[j, i-1])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if j < width-1 :
                 pt2 = Point()
-                pt2.x = i + cfg.grid_range[0]
-                pt2.y = j + 1 + cfg.grid_range[1]
-                pt2.z = gnd_label[j+1, i]
+                pt2.x = float(i + cfg.grid_range[0])
+                pt2.y = float(j + 1 + cfg.grid_range[1])
+                pt2.z = float(gnd_label[j+1, i])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if i < length-1 :
                 pt2 = Point()
-                pt2.x = i + 1 + cfg.grid_range[0]
-                pt2.y = j + cfg.grid_range[1]
-                pt2.z = gnd_label[j, i+1]
+                pt2.x = float(i + 1 + cfg.grid_range[0])
+                pt2.y = float(j + cfg.grid_range[1])
+                pt2.z = float(gnd_label[j, i+1])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
     marker_pub.publish(gnd_marker)
 
-
-
-
-
-
-
-
-
-
-
-
-def np2ros_pub(points, pcl_pub, timestamp = None):
+def np2ros_pub(ros_node, points, pcl_pub, timestamp = None):
     npoints = points.shape[0] # Num of points in PointCloud
     points_arr = np.zeros((npoints,), dtype=[
                                         ('x', np.float32),
@@ -143,14 +123,11 @@ def np2ros_pub(points, pcl_pub, timestamp = None):
     points_arr['b'] = 255
 
     if timestamp == None:
-        timestamp = rospy.Time.now()
-    cloud_msg = ros_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id = "/kitti/base_link")
+        timestamp = ros_node.get_clock().now().to_msg()
+    cloud_msg = ros2_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id = "map")
     # rospy.loginfo("happily publishing sample pointcloud.. !")
     pcl_pub.publish(cloud_msg)
     # rospy.sleep(0.1)
-
-
-
 
 
 def rgb_to_float(color):
@@ -177,14 +154,7 @@ def rgb_to_float(color):
     return float_rgb
 
 
-
-
-
-
-
-
-
-def np2ros_pub_2(points, pcl_pub, timestamp, color):
+def np2ros_pub_2(ros_node, points, pcl_pub, timestamp, color):
     npoints = points.shape[0] # Num of points in PointCloud
     points_arr = np.zeros((npoints,), dtype=[
                                         ('x', np.float32),
@@ -202,8 +172,8 @@ def np2ros_pub_2(points, pcl_pub, timestamp, color):
     # points_arr['b'] = 255
 
     if timestamp == None:
-        timestamp = rospy.Time.now()
-    cloud_msg = ros_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id = "/kitti/base_link")
+        timestamp = ros_node.get_clock().now().to_msg()
+    cloud_msg = ros2_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id = "map")
     # rospy.loginfo("happily publishing sample pointcloud.. !")
     pcl_pub.publish(cloud_msg)
 
