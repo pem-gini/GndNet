@@ -1,13 +1,14 @@
 import glob
 import os
 import sys
-# sys.path.append("..") # Adds higher directory to python modules path.
+sys.path.append("../..") # Adds higher directory to python modules path.
 
 import yaml
 import ipdb as pdb
 import time
 import numpy as np
-import rospy
+import rclpy
+from rclpy.node import Node
 from visualization_msgs.msg import MarkerArray, Marker
 from message_filters import TimeSynchronizer, Subscriber,ApproximateTimeSynchronizer
 import message_filters
@@ -15,22 +16,21 @@ from sensor_msgs.msg import PointCloud2
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import math
-import ros_numpy
+import ros2_numpy.ros2_numpy as ros2_numpy
 import numba
-from numba import jit,types
-from functools import reduce
-from scipy.spatial import Delaunay
+
 
 import torch
 from torch.utils.data.sampler import SubsetRandomSampler
+from dataset_generator_utils import random_sample_numpy, extract_pc_in_box2d, shift_cloud_func
 
 
 
 plt.ion()
 
 # with open('config/config.yaml') as f:
-with open('config/config_kittiSem.yaml') as f:
-	config_dict = yaml.load(f)
+with open('../../config/config_kittiSem.yaml') as f:
+	config_dict = yaml.load(f, Loader=yaml.FullLoader)
 
 class ConfigClass:
 	def __init__(self, **entries):
@@ -48,85 +48,12 @@ pc_range = cfg.pc_range[:2] + cfg.pc_range[3:5] # select minmax xy
 grid_size = cfg.grid_range
 length = int(grid_size[2] - grid_size[0]) # x direction
 width = int(grid_size[3] - grid_size[1])	# y direction
-out_dir = '/home/anshul/es3cap/my_codes/GndNet/data/training/seq_006'
-
-
-# @jit(nopython=True)
-def in_hull(p, hull):
-	if not isinstance(hull,Delaunay):
-		hull = Delaunay(hull)
-	return hull.find_simplex(p)>=0
-
-def extract_pc_in_box3d(pc, box3d):
-	''' pc: (N,3), box3d: (8,3) '''
-	box3d_roi_inds = in_hull(pc[:,0:3], box3d)
-	return pc[box3d_roi_inds,:], box3d_roi_inds
-
-
-# @jit(nopython=True)
-def extract_pc_in_box2d(pc, box2d):
-	''' pc: (N,2), box2d: (xmin,ymin,xmax,ymax) '''
-	box2d_corners = np.zeros((4,2))
-	box2d_corners[0,:] = [box2d[0],box2d[1]] 
-	box2d_corners[1,:] = [box2d[2],box2d[1]] 
-	box2d_corners[2,:] = [box2d[2],box2d[3]] 
-	box2d_corners[3,:] = [box2d[0],box2d[3]] 
-	box2d_roi_inds = in_hull(pc[:,0:2], box2d_corners)
-	return pc[box2d_roi_inds,:]
-
-
-
-# @jit(nopython=True)
-def random_sample_torch(cloud, N):
-	if(cloud.size > 0):
-		cloud = torch.from_numpy(np.asarray(cloud)).float().cuda()
-
-		points_count = cloud.shape[0]
-		# pdb.set_trace()
-		# print("indices", len(ind))
-		if(points_count > 1):
-			prob = torch.randperm(points_count) # sampling without replacement
-			if(points_count > N):
-				idx = prob[:N]
-				sampled_cloud = cloud[idx]
-				# print(len(crop))
-			else:
-				r = int(N/points_count)
-				cloud = cloud.repeat(r+1,1)
-				sampled_cloud = cloud[:N]
-
-		else:
-			sampled_cloud = torch.ones(N,3).cuda()
-	else:
-		sampled_cloud = torch.ones(N,3).cuda()
-	return sampled_cloud.cpu().numpy()
-
-
-
-
-
-# @jit(nopython=True)
-def random_sample_numpy(cloud, N):
-	if(cloud.size > 0):
-		points_count = cloud.shape[0]
-		if(points_count > 1):
-			idx = np.random.choice(points_count,N) # sample with replacement
-			sampled_cloud = cloud[idx]
-		else:
-			sampled_cloud = np.ones((N,3))
-	else:
-		sampled_cloud = np.ones((N,3))
-	return sampled_cloud
-
-@jit(nopython=True)
-def shift_cloud_func(cloud, height):
-	cloud += np.array([0,0,height,0], dtype=np.float32)
-	return cloud
+out_dir = '/home/finn/pem/ducktrain/GndNet/data/training/000'
 
 # @jit(nopython=True)
 def process_cloud(cloud_msg):
 	# Convert Ros pointcloud2 msg to numpy array
-	pc = ros_numpy.numpify(cloud_msg)
+	pc = ros2_numpy.numpify(cloud_msg)
 	points=np.zeros((pc.shape[0],4))
 	points[:,0]=pc['x']
 	points[:,1]=pc['y']
@@ -167,12 +94,18 @@ def recorder(cloud, gnd_label,num):
 
 
 
-class listener(object):
+class Listener(Node):
 	def __init__(self):
+		super().__init__('ground_estimation_dataset')
+
+		if not os.path.isdir(out_dir + "/reduced_velo/"):
+			os.mkdir(out_dir + "/reduced_velo/")
+		if not os.path.isdir(out_dir + "/gnd_labels/"):
+			os.mkdir(out_dir + "/gnd_labels/")
 
 		# self.point_cloud_sub = message_filters.Subscriber("/kitti/classified_cloud", PointCloud2)
-		self.point_cloud_sub = message_filters.Subscriber("/kitti/raw/pointcloud", PointCloud2)
-		self.ground_marker_sub = message_filters.Subscriber('/kitti/ground_marker', Marker)
+		self.point_cloud_sub = message_filters.Subscriber(self, PointCloud2, "/kitti/raw/pointcloud")
+		self.ground_marker_sub = message_filters.Subscriber(self, Marker, '/kitti/ground_marker')
 
 		ts = ApproximateTimeSynchronizer([self.point_cloud_sub, self.ground_marker_sub],10, 0.1, allow_headerless=True)
 		ts.registerCallback(self.callback)
@@ -216,20 +149,14 @@ class listener(object):
 			plt.draw()
 			plt.pause(0.01)
 			self.hf.clf()
-		
-
-
-	
-
 
 
 if __name__ == '__main__':
-	rospy.init_node('ground_estimation_dataset', anonymous=True)
-	obj = listener()
-	rospy.spin()
+	rclpy.init(args=sys.argv)
+	obj = Listener()
+	rclpy.spin(obj)
+	rclpy.shutdown()
 	# plt.show(block=True)
-
-
 
 
 
@@ -239,7 +166,7 @@ if __name__ == '__main__':
 	# cloud = np.array([p for p in cloud if p[0] > 0])
 
 	# # Use PCL to clip the pointcloud
-	# region = (grid_size[0],grid_size[1],grid_size[2],0,grid_size[3],grid_size[4],grid_size[5],0)
+	# rregion = (grid_size[0],grid_size[1],grid_size[2],0,grid_size[3],grid_size[4],grid_size[5],0)
 	# #(xmin, ymin, zmin, smin, xmax, ymax, zmax, smax)
 	# pcl_cloud = pcl.PointCloud()
 	# pcl_cloud.from_array(cloud)

@@ -5,6 +5,23 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "parse dataset",
+            "type": "python",
+            "request": "launch",
+            "program": "semKitti_morph_data.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}/dataset_utils/gnd_data_generator",
+            "args": [
+                "--resume",
+                "trained_models/checkpoint.pth.tar",
+                "-v",
+                "-gnd",
+                "--data_dir",
+                "data/prediction/seq_000/"
+            ]
+        },
+        {
             "name": "evaluate Semantic",
             "type": "python",
             "request": "launch",

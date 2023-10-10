@@ -6,13 +6,12 @@ import ipdb as pdb
 import time
 import numpy as np
 from numpy.linalg import inv
-import rospy
+import rclpy
 from visualization_msgs.msg import MarkerArray, Marker
 from message_filters import TimeSynchronizer, Subscriber,ApproximateTimeSynchronizer
 import message_filters
 from sensor_msgs.msg import PointCloud2
-from tf.transformations import euler_from_quaternion, quaternion_from_euler, quaternion_from_matrix
-import tf
+from tf_transformations import quaternion_from_matrix
 
 from geometry_msgs.msg import Point
 from scipy.spatial.transform import Rotation as R
@@ -20,7 +19,7 @@ import cv2
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import math
-import ros_numpy
+import ros2_numpy.ros2_numpy as ros2_numpy
 import numba
 from numba import jit,types
 from functools import reduce
@@ -31,7 +30,7 @@ from skimage.restoration import inpaint
 from skimage.morphology import erosion, dilation
 import torch
 from torch.utils.data.sampler import SubsetRandomSampler
-# from utils.utils import np2ros_pub
+from utils.utils import np2ros_pub
 
 plt.ion()
 
@@ -143,16 +142,17 @@ def rotate_cloud(cloud, theta):
 
 
 def parse_semanticKitti(data_dir):
-    rospy.init_node('gnd_data_provider', anonymous=True)
-    pcl_pub = rospy.Publisher("/kitti/velo/pointcloud", PointCloud2, queue_size=10)
-    pcl_pub2 = rospy.Publisher("/kitti/raw/pointcloud", PointCloud2, queue_size=10)
+    rclpy.init(sys.argv)
+    node = rclpy.create_node('gnd_data_provider')
+    pcl_pub = node.create_publisher(PointCloud2, "/kitti/velo/pointcloud", 10)
+    pcl_pub2 = node.create_publisher(PointCloud2, "/kitti/raw/pointcloud", 10)
 
     velodyne_dir = data_dir + "velodyne/"
     label_dir = data_dir + 'labels/'
     frames = os.listdir(velodyne_dir)
     calibration = parse_calibration(os.path.join(data_dir, "calib.txt"))
     poses = parse_poses(os.path.join(data_dir, "poses.txt"), calibration)
-    rate = rospy.Rate(2) # 10hz
+    rate = node.create_rate(2) # 10hz
     angle = 0
     increase = True
     for f in range(len(frames)):
@@ -184,10 +184,10 @@ def parse_semanticKitti(data_dir):
 
         gnd_points, obs_points = segment_cloud(points.copy(),[40, 44, 48, 49,60,72])
         
-        timestamp = rospy.Time.now()
+        timestamp = node.get_clock().now().to_msg()
         broadcast_TF(poses[f],timestamp)
-        np2ros_pub(gnd_points, pcl_pub, timestamp)
-        np2ros_pub(points, pcl_pub2,timestamp)
+        np2ros_pub(node, gnd_points, pcl_pub, timestamp)
+        np2ros_pub(node, points, pcl_pub2,timestamp)
         
         rate.sleep()
 
