@@ -72,41 +72,43 @@ def gnd_marker_pub(gnd_label, marker_pub,timestamp):
     gnd_marker.points = []
 
     # gnd_labels are arranged in reverse order
+    x_step = length / gnd_label.shape[0]
+    y_step = width / gnd_label.shape[1]
     for j in range(gnd_label.shape[0]):
         for i in range(gnd_label.shape[1]):
             pt1 = Point()
-            pt1.x = float(i + grid_size[0])
-            pt1.y = float(j + grid_size[1])
+            pt1.x = float(i*x_step + grid_size[0])
+            pt1.y = float(j*y_step + grid_size[1])
             pt1.z = float(gnd_label[j,i])
 
             if j>0 :
                 pt2 = Point()
-                pt2.x = float(i + grid_size[0])
-                pt2.y = float(j-1 +grid_size[1])
+                pt2.x = float(i*x_step + grid_size[0])
+                pt2.y = float((j-1)*y_step +grid_size[1])
                 pt2.z = float(gnd_label[j-1, i])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if i>0 :
                 pt2 = Point()
-                pt2.x = float(i -1 + grid_size[0])
-                pt2.y = float(j + grid_size[1])
+                pt2.x = float((i-1)*x_step + grid_size[0])
+                pt2.y = float(j*y_step + grid_size[1])
                 pt2.z = float(gnd_label[j, i-1])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if j < width-1 :
                 pt2 = Point()
-                pt2.x = float(i + grid_size[0])
-                pt2.y = float(j + 1 + grid_size[1])
+                pt2.x = float(i*x_step + grid_size[0])
+                pt2.y = float((j+1)*y_step + grid_size[1])
                 pt2.z = float(gnd_label[j+1, i])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if i < length-1 :
                 pt2 = Point()
-                pt2.x = float(i + 1 + grid_size[0])
-                pt2.y = float(j + grid_size[1])
+                pt2.x = float((i+1)*x_step + grid_size[0])
+                pt2.y = float(j*y_step + grid_size[1])
                 pt2.z = float(gnd_label[j, i+1])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)

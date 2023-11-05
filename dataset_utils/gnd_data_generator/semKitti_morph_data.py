@@ -1,5 +1,6 @@
-use_ros = False
+use_ros = True
 visualize = False
+export = False
 
 import os
 import yaml
@@ -8,7 +9,7 @@ import numpy as np
 from numpy.linalg import inv
 
 if use_ros:
-    from semiKitti_ros_utils import ros_init, KittiSemanticDataGeneratorNode
+    from semiKitti_ros_utils import ros_init
 else:
     from dataset_generator_utils import random_sample_numpy, extract_pc_in_box2d
 
@@ -20,7 +21,8 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 
 from numba import jit
-from scipy import signal
+from scipy import signal, ndimage
+from scipy.interpolate import RegularGridInterpolator, LinearNDInterpolator, CloughTocher2DInterpolator, NearestNDInterpolator
 from skimage.morphology import reconstruction
 from skimage.restoration import inpaint
 from skimage.morphology import erosion, dilation
@@ -31,7 +33,7 @@ if visualize:
     plt.ion()
 
 # with open('config/config.yaml') as f:
-with open('../../config/config_kittiSem.yaml') as f:
+with open('../../config/config_kittiSem2.yaml') as f:
 	config_dict = yaml.load(f, Loader=yaml.FullLoader)
 
 class ConfigClass:
@@ -50,6 +52,17 @@ grid_size = cfg.grid_range
 length = int(grid_size[2] - grid_size[0]) # x direction
 width = int(grid_size[3] - grid_size[1])    # y direction
 lidar_height = cfg.lidar_height
+
+voxel_dimensions = cfg.voxel_size
+if voxel_dimensions[0] != voxel_dimensions[1]:
+    print('Non-square voxels are not yet supported!')
+    exit(-1)
+voxel_size = voxel_dimensions[0]
+
+print(grid_size)
+print(type(grid_size))
+print(voxel_size)
+print(type(voxel_size))
 
 data_dir = '/home/finn/pem/ducktrain/GndNet/data/prediction/seq_000'
 out_dir = '/home/finn/pem/ducktrain/GndNet/data/training/000'
@@ -151,20 +164,20 @@ def lidar_to_heightmap(points, grid_size, voxel_size, max_points):
     # lidar_data = np.reshape(lidar_data, (-1, 2))
     heightmap_shape = (grid_size[2:]-grid_size[:2])/voxel_size
     heightmap = np.zeros((int(heightmap_shape[0]),int(heightmap_shape[1]), max_points))
-    num_points = np.ones((int(heightmap_shape[0]),int(heightmap_shape[1])), dtype = np.int32) # num of points in each cell # np.ones just to avoid division by zero
+    num_points = np.zeros((int(heightmap_shape[0]),int(heightmap_shape[1])), dtype = np.int32) # num of points in each cell # np.ones just to avoid division by zero
     N = lidar_data.shape[0] # Total number of points
     for i in range(N):
         x = lidar_data[i,0]
         y = lidar_data[i,1]
         z = height_data[i]
         if(z < 10):
-            if (0 < x < heightmap.shape[0]) and (0 < y < heightmap.shape[1]):
+            if (0 <= x < heightmap.shape[0]) and (0 <= y < heightmap.shape[1]):
                 k = num_points[x,y] # current num of points in a cell
-                if k-1 <= max_points:
-                    heightmap[x,y,k-1] = z
+                if k < max_points:
+                    heightmap[x,y,k] = z
                     num_points[x,y] += 1
-    return heightmap.sum(axis = 2)/num_points
-
+    
+    return heightmap.sum(axis = 2), heightmap, num_points
     
 #     return heightmap
 
@@ -182,7 +195,7 @@ def rotate_cloud(cloud, theta):
 
 
 @jit(nopython=True)
-def semantically_segment_cloud(points, grid_size, voxel_size, elevation_map, threshold = 0):
+def semantically_segment_cloud(points, grid_size, voxel_size, elevation_map, threshold = 0.08):
     lidar_data = points[:, :2] # neglecting the z co-ordinate
     height_data = points[:, 2] + lidar_height
     rgb = np.zeros((points.shape[0],3))
@@ -210,23 +223,50 @@ if visualize:
     fig = plt.figure()
 else:
     fig = None
+
 def process_cloud(cloud):
     # start = time.time()
     # remove all non ground points; gnd labels = [40, 44, 48, 49]
     # gnd, obs = segment_cloud(cloud,[40, 44, 48, 49])
     gnd, obs = segment_cloud(cloud,[40, 44, 48, 49,60,72])
-    global visualize
+    global visualize, grid_size, voxel_size
 
-    voxel_size = 1
-    grid_size = np.array([-50, -50, 50, 50])
-    gnd_img = lidar_to_img(np.copy(gnd), grid_size, voxel_size, fill = 1)
-    gnd_heightmap = lidar_to_heightmap(np.copy(gnd), grid_size, voxel_size, max_points = 100)
+    grid_size_np = np.asarray(grid_size)
+    gnd_img = lidar_to_img(np.copy(gnd), grid_size_np, voxel_size, fill = 1)
+    gnd_heightmap, heightmap, num_points = lidar_to_heightmap(np.copy(gnd), grid_size_np, voxel_size, max_points = 100)
 
-    kernel = np.ones((5,5),np.uint8)
-    gnd_img_dil = cv2.dilate(gnd_img,kernel,iterations = 2)
-    mask = gnd_img_dil - gnd_img
-    image_result = inpaint.inpaint_biharmonic(gnd_heightmap, mask)
-    seg = semantically_segment_cloud(cloud.copy(), grid_size, voxel_size, image_result)
+    filled_voxels = num_points!=0
+    gnd_heightmap = np.divide(gnd_heightmap, num_points, where=filled_voxels)
+
+    if export:
+        np.save('heightmap', gnd_heightmap)
+        np.save('heightmap_raw', heightmap)
+        np.save('num_points', num_points)
+
+
+    # Interpolate missing spots
+    y,x = np.where(filled_voxels)
+    interpL = LinearNDInterpolator(list(zip(y,x)), gnd_heightmap[y,x])
+    xx = np.arange(gnd_heightmap.shape[0])
+    yy = np.arange(gnd_heightmap.shape[1])
+    X, Y = np.meshgrid(xx, yy, indexing='ij')
+    interpolated_linear = interpL(X,Y)
+  
+    empty_voxels = np.ma.masked_invalid(interpolated_linear).mask
+    y,x = np.where(np.logical_not(empty_voxels))
+    interpQ = NearestNDInterpolator(list(zip(y,x)), interpolated_linear[y,x])
+
+    y,x=np.where(empty_voxels)
+    image_result = np.copy(interpolated_linear)
+    image_result[y,x] = np.nan_to_num(interpQ(y,x))
+
+    # kernel = np.ones((5,5),np.uint8)
+    # gnd_img_dil = cv2.dilate(gnd_img,kernel,iterations = 2)
+    # mask = gnd_img_dil - gnd_img
+    # inpaint_result = inpaint.inpaint_biharmonic(gnd_heightmap, mask)
+    #conv_kernel = np.ones((3,3))
+    #image_result = signal.convolve2d(image_result_2, conv_kernel, boundary='wrap', mode='valid')/conv_kernel.sum()
+    seg = semantically_segment_cloud(cloud.copy(), grid_size_np, voxel_size, image_result)
 
     if visualize:
         fig.clear()
@@ -234,21 +274,20 @@ def process_cloud(cloud):
         fig.add_subplot(2, 3, 1)
         plt.imshow(gnd_img, interpolation='nearest')
 
-        fig.add_subplot(2, 3, 2)
-        plt.imshow(gnd_img_dil, interpolation='nearest')
+        # fig.add_subplot(2, 3, 2)
+        # plt.imshow(gnd_img_dil, interpolation='nearest')
 
-        fig.add_subplot(2, 3, 3)
-        plt.imshow(mask, interpolation='nearest')
+        # fig.add_subplot(2, 3, 3)
+        # plt.imshow(mask, interpolation='nearest')
 
         fig.add_subplot(2, 3, 4)
         cs = plt.imshow(gnd_heightmap, interpolation='nearest')
         fig.colorbar(cs)
         
         fig.add_subplot(2, 3, 5)
-        cs = plt.imshow(image_result, interpolation='nearest')
+        cs = plt.imshow(interpolated_linear, interpolation='nearest')
         fig.colorbar(cs)
 
-        image_result = signal.convolve2d(image_result, kernel, boundary='wrap', mode='same')/kernel.sum()
         # image_result = inpaint.inpaint_biharmonic(image_result, mask)
         # image_result = cv2.dilate(image_result,kernel,iterations = 1)
 
@@ -338,6 +377,7 @@ class KittiSemanticDataGenerator():
         # points += np.array([0,0,lidar_height,0,0], dtype=np.float32)
         # points[0,2] += lidar_height
 
+        global cfg, lidar_height
         if cfg.shift_cloud:
             self.points[:,2] += lidar_height
             self.cloud[:,2] += lidar_height
@@ -346,12 +386,14 @@ class KittiSemanticDataGenerator():
 
 
 def main(data_dir: str):
-    global out_dir
-
+    # When using ROS, the data will be parsed in a periodic interval and published for other nodes to process and visualize
     if use_ros:
         global fig
         ros_init(data_generator=KittiSemanticDataGenerator(data_dir=data_dir), fig=fig, cfg=cfg)
+    
+    # Otherwise the data will be processed in a loop and saved to file
     else:
+        global out_dir
         if not os.path.isdir(os.path.join(out_dir,"reduced_velo/")):
             os.mkdir(os.path.join(out_dir, "reduced_velo/"))
         if not os.path.isdir(os.path.join(out_dir, "gnd_labels/")):

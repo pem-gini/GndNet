@@ -5,6 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: Current File in data generator",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}/dataset_utils/gnd_data_generator"
+        },
+        {
             "name": "parse dataset",
             "type": "python",
             "request": "launch",
