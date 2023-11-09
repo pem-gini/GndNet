@@ -1,10 +1,13 @@
-use_ros = True
+use_ros = False
 visualize = False
 export = False
 
+import math
+import multiprocessing
+import time
 import os
 import yaml
-import ipdb as pdb
+import logging
 import numpy as np
 from numpy.linalg import inv
 
@@ -18,15 +21,12 @@ if visualize:
 
 
 from scipy.spatial.transform import Rotation as R
-import cv2
+# import cv2
 
 from numba import jit
 from scipy import signal, ndimage
-from scipy.interpolate import RegularGridInterpolator, LinearNDInterpolator, CloughTocher2DInterpolator, NearestNDInterpolator
-from skimage.morphology import reconstruction
-from skimage.restoration import inpaint
-from skimage.morphology import erosion, dilation
-from torch.utils.data.sampler import SubsetRandomSampler
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+#from torch.utils.data.sampler import SubsetRandomSampler
 
 
 if visualize:
@@ -42,6 +42,16 @@ class ConfigClass:
 
 cfg = ConfigClass(**config_dict) # convert python dict to class for ease of use
 
+# Init logging
+logging.basicConfig()
+formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(message)s')
+logger_main = logging.getLogger().getChild('main')
+logger_main.setLevel(logging.DEBUG)
+
+fh = logging.FileHandler('dataprep.log')
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+logger_main.addHandler(fh)
 
 # # resolution of ground estimator grid is 1m x 1m 
 # visualize = False
@@ -55,17 +65,17 @@ lidar_height = cfg.lidar_height
 
 voxel_dimensions = cfg.voxel_size
 if voxel_dimensions[0] != voxel_dimensions[1]:
-    print('Non-square voxels are not yet supported!')
+    logger_main.error('Non-square voxels are not yet supported!')
     exit(-1)
 voxel_size = voxel_dimensions[0]
 
-print(grid_size)
-print(type(grid_size))
-print(voxel_size)
-print(type(voxel_size))
+logger_main.debug(grid_size)
+logger_main.debug(type(grid_size))
+logger_main.debug(voxel_size)
+logger_main.debug(type(voxel_size))
 
-data_dir = '/home/finn/pem/ducktrain/GndNet/data/prediction/seq_000'
-out_dir = '/home/finn/pem/ducktrain/GndNet/data/training/000'
+data_dir = '/work/yw410445/dataset/sequences/'
+out_dir = '/work/yw410445/training_data/sequences/'
 
 
 def parse_calibration(filename):
@@ -367,7 +377,7 @@ class KittiSemanticDataGenerator():
             self.angle -=0.1
 
         if self.logger != None:
-            self.logger(f'Frame {current_frame} with angle {self.angle}')
+            self.logger.info(f'Frame {current_frame} with angle {self.angle}')
 
         self.points = rotate_cloud(points, theta = [0,5,self.angle]) #zyx
 
@@ -385,39 +395,78 @@ class KittiSemanticDataGenerator():
         return True
 
 
-def main(data_dir: str):
-    # When using ROS, the data will be parsed in a periodic interval and published for other nodes to process and visualize
-    if use_ros:
-        global fig
-        ros_init(data_generator=KittiSemanticDataGenerator(data_dir=data_dir), fig=fig, cfg=cfg)
-    
-    # Otherwise the data will be processed in a loop and saved to file
-    else:
-        global out_dir
-        if not os.path.isdir(os.path.join(out_dir,"reduced_velo/")):
-            os.mkdir(os.path.join(out_dir, "reduced_velo/"))
-        if not os.path.isdir(os.path.join(out_dir, "gnd_labels/")):
-            os.mkdir(os.path.join(out_dir, "gnd_labels/"))
+def main(logger: logging.Logger, data_dir: str, sequence_start=0, sequence_end=100, max_frames=None):
+    global out_dir
+    sequences = sorted(os.listdir(data_dir))
 
-        data_generator = KittiSemanticDataGenerator(data_dir=data_dir, logger=print)
-        count = 0
-        while data_generator.kitti_semantic_data_generate():
-            cloud = extract_pc_in_box2d(data_generator.points, pc_range)
+    framesCnt = 0
+    sequenceCnt = 0
 
-            # random sample point cloud to specified number of points
-            cloud = random_sample_numpy(cloud, N = cfg.num_points)
+    for sequence in sequences:
+        # Only compute sequences within the given range
+        if not (sequence_start <= int(sequence) <= sequence_end):
+            continue
 
-            # Save data to file
-            velo_path = os.path.join(out_dir, "reduced_velo/", "%06d" % count)
-            label_path = os.path.join(out_dir, "gnd_labels/", "%06d" % count)
-            np.save(velo_path,cloud)
-            np.save(label_path, data_generator.gnd_label)
+        sequence_dir = os.path.join(data_dir, sequence)
+        sequence_dir_out = os.path.join(out_dir, sequence)
+        if not os.path.isdir(sequence_dir):
+            continue
 
-            count += 1
+        # When using ROS, the data will be parsed in a periodic interval and published for other nodes to process and visualize
+        if use_ros:
+            global fig
+            ros_init(data_generator=KittiSemanticDataGenerator(data_dir=sequence_dir), fig=fig, cfg=cfg)
+        
+        # Otherwise the data will be processed in a loop and saved to file
+        else:
+            os.makedirs(os.path.join(sequence_dir_out,"reduced_velo/"), exist_ok=True)
+            os.makedirs(os.path.join(sequence_dir_out,"gnd_labels/"), exist_ok=True)
 
+            data_generator = KittiSemanticDataGenerator(data_dir=sequence_dir, logger=logger.getChild(f'seq{sequence}'))
+            count = 0
+            while data_generator.kitti_semantic_data_generate():
+                if count == 1:
+                    start = time.time()
+
+                cloud = extract_pc_in_box2d(data_generator.points, pc_range)
+
+                # random sample point cloud to specified number of points
+                cloud = random_sample_numpy(cloud, N = cfg.num_points)
+
+                # Save data to file
+                velo_path = os.path.join(sequence_dir_out, "reduced_velo/", "%06d" % count)
+                label_path = os.path.join(sequence_dir_out, "gnd_labels/", "%06d" % count)
+                np.save(velo_path,cloud)
+                np.save(label_path, data_generator.gnd_label)
+
+                count += 1
+
+                # For debugging purposes it can help to limit the number of frames
+                framesCnt += 1
+                if max_frames != None and framesCnt >= max_frames:
+                    logger.debug(time.time()-start)
+                    return
 
 if __name__ == '__main__':
-    main(data_dir)
+    processes = []
+    numCores = 4
+    numSequences = 11
+
+    lowerBound = 0
+    seqPerProcess = math.ceil(numSequences / numCores)
+    for i in range(numCores):
+        end = min(numSequences, lowerBound+seqPerProcess)
+        logger_thread = logger_main.getChild(f'process{i}')
+        p = multiprocessing.Process(target=main, args=(logger_thread, data_dir, lowerBound, end-1, None))
+        processes.append(p)
+
+        logger_main.info(f'Start process {i} of {numCores}: {lowerBound}-{end}')
+        p.start()
+
+        lowerBound = end
+
+    for process in processes:
+        process.join()
 
 
 # # @jit(nopython=True)
