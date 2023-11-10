@@ -1,7 +1,7 @@
 #!/usr/bin/zsh
 
 #SBATCH --cpus-per-task=5
-#SBATCH --mem-per-cpu=2048M
+#SBATCH --mem-per-cpu=500M
 #SBATCH --job-name=GND_NET_DATA_PREP
 #SBATCH --output=output.%J.txt
 #SBATCH --time=00:30:00
