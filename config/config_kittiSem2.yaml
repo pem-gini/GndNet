@@ -20,6 +20,7 @@ weight_decay: 0.0005
 epochs: 120
 use_norm: false
 clip: 0.25 # gradient clipping
+max_memory: 4000 # Maximum memory to load at once in MiB
 
 # Voxel Feature Extractor
 vfe_filters: [64] # only one filter for now

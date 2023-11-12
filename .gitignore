@@ -5,4 +5,5 @@ data/
 *.deb.*
 *.npy
 *.log
+*.tar
 output.*.txt
