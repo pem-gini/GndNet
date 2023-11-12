@@ -8,55 +8,48 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 import yaml
-
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import ipdb as pdb
-
-
-
-
-
-
-
+import os
+import logging
+# import ipdb as pdb
 
 class kitti_gnd(Dataset):
-	def __init__(self, data_dir, train = True, skip_frames = 1):
+	def __init__(self, data_dir, train = True, skip_frames = 1, num_input_features = 3, logger: logging.Logger=logging.root):
 		self.train = train
+		self.logger = logger
 
 		if self.train:
 			self.train_data = []
 			self.train_labels = []
-			print('loading training data ')
-			seq_folders = os.listdir(data_dir +"training/")
-			for seq_num in seq_folders:
-				seq_path = data_dir +"training/"+ "seq_"+ "%03d" % int(seq_num.split("_")[1])
-				files_in_seq = os.listdir(seq_path + '/reduced_velo/')
+			logger.info('loading training data ')
+			seq_folders = os.listdir(os.path.join(data_dir, "training"))
+			for seq in seq_folders:
+				seq_path = os.path.join(data_dir, 'training', seq)
+				files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo'))
 
 				for data_num in range(0, len(files_in_seq),skip_frames): # too much of dataset we skipping files
-					data_path = seq_path + '/reduced_velo/' + "%06d.npy" % data_num
-					point_set = np.load(data_path) #(N,3) point set
+					data_path = os.path.join(seq_path, 'reduced_velo', "%06d.npy" % data_num)
+					point_set = np.load(data_path)[:,:num_input_features] #(N,3) point set
 					self.train_data.append(point_set)
 
-					label_path = seq_path + '/gnd_labels/' + "%06d.npy" % data_num
+					label_path = os.path.join(seq_path, 'gnd_labels', "%06d.npy" % data_num)
 					label = np.load(label_path) # (W x L)
 					self.train_labels.append(label)
 
 		else:
 			self.valid_data = []
 			self.valid_labels = []
-			print('loading validation data ')
-			seq_folders = os.listdir(data_dir +"validation/")
-			for seq_num in seq_folders:
-				seq_path = data_dir +"validation/"+ "seq_"+ "%03d" % int(seq_num.split("_")[1])
-				files_in_seq = os.listdir(seq_path + '/reduced_velo/')
+			logger.info('loading validation data ')
+			seq_folders = os.listdir(os.path.join(data_dir, "validation"))
+			for seq in seq_folders:
+				seq_path = os.path.join(data_dir, "validation", seq)
+				files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo'))
 
 				for data_num in range(0, len(files_in_seq),skip_frames): # too much of dataset we skipping files
-					data_path = seq_path + '/reduced_velo/' + "%06d.npy" % data_num
-					point_set = np.load(data_path) #(N,3) point set
+					data_path = os.path.join(seq_path, 'reduced_velo', "%06d.npy" % data_num)
+					point_set = np.load(data_path)[:,:num_input_features] #(N,3) point set
 					self.valid_data.append(point_set)
 
-					label_path = seq_path + '/gnd_labels/' + "%06d.npy" % data_num
+					label_path = os.path.join(seq_path, 'gnd_labels', "%06d.npy" % data_num)
 					label = np.load(label_path) # (W x L)
 					self.valid_labels.append(label)
 
@@ -132,11 +125,13 @@ class kitti_gnd(Dataset):
 
 
 
-def get_valid_loader(data_dir, batch = 4, skip = 1):
+def get_valid_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, parent_logger=logging.root):
+
+	parent_logger = parent_logger.getChild('dataset_provider.valid')
 
 	use_cuda = torch.cuda.is_available()
 	if use_cuda:
-		print("using cuda")
+		parent_logger.info("using cuda")
 		num_workers = 1
 		pin_memory = True
 	else:
@@ -144,10 +139,10 @@ def get_valid_loader(data_dir, batch = 4, skip = 1):
 		pin_memory = True
 
 
-	valid_loader = DataLoader(kitti_gnd(data_dir,train = False, skip_frames = skip),
+	valid_loader = DataLoader(kitti_gnd(data_dir,train = False, skip_frames = skip, num_input_features=num_input_features, logger=parent_logger),
 					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=True,drop_last=True)
 
-	print("Valid Data size ",len(valid_loader)*batch)
+	parent_logger.info("Valid Data size %d",len(valid_loader)*batch)
 
 	return valid_loader
 
@@ -155,21 +150,23 @@ def get_valid_loader(data_dir, batch = 4, skip = 1):
 
 
 
-def get_train_loader(data_dir, batch = 4, skip = 1):
+def get_train_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, parent_logger=logging.root):
+
+	parent_logger = parent_logger.getChild('dataset_provider.train')
 
 	use_cuda = torch.cuda.is_available()
 	if use_cuda:
-		print("using cuda")
+		parent_logger.info("using cuda")
 		num_workers = 1
 		pin_memory = True
 	else:
 		num_workers = 4
 		pin_memory = True
 
-	train_loader = DataLoader(kitti_gnd(data_dir,train = True, skip_frames = skip),
+	train_loader = DataLoader(kitti_gnd(data_dir,train = True, skip_frames = skip, num_input_features=num_input_features, logger=parent_logger),
 					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=True,drop_last=True)
 
-	print("Train Data size ",len(train_loader)*batch)
+	parent_logger.info("Train Data size %d",len(train_loader)*batch)
 
 	return train_loader
 
@@ -187,6 +184,9 @@ if __name__ == '__main__':
 
 	cfg = ConfigClass(**config_dict) # convert python dict to class for ease of use
 	
+	# IO Includes
+	import matplotlib.pyplot as plt
+	from mpl_toolkits.mplot3d import Axes3D
 
 	# Ros Includes
 	import rospy

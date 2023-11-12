@@ -25,7 +25,7 @@ from mpl_toolkits.mplot3d import Axes3D
 
 
 
-import ipdb as pdb
+# import ipdb as pdb
 
 plt.ion()
 grid_size = [0, -30, -1, 60, 30, 3] #xyz

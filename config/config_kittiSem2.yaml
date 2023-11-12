@@ -1,4 +1,4 @@
-data_dir: 'data/'
+data_dir: '/work/yw410445/training_data'
 shift_cloud: true
 lidar_height: 1.733
 num_points: 100000
@@ -9,7 +9,7 @@ grid_range: [-10, -10, 10, 10]
 pc_range: [-10,-10,-4,10,10,4] # cmcdot grid origin is at base_link not the velodyne so have to shift cropping points
 voxel_size : [.4, .4, 8]
 max_points_voxel : 100
-max_voxels: 10000
+max_voxels: 2500
 input_features: 3
 
 # model_param

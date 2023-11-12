@@ -5,6 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Model training",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "-s",
+                "--config",
+                "config/config_kittiSem2.yaml"
+            ]
+        },
+        {
             "name": "Python: Current File in data generator",
             "type": "python",
             "request": "launch",

@@ -12,7 +12,7 @@ import os
 import shutil
 import yaml
 import time
-import math
+import logging
 
 import torch
 import torch.nn as nn
@@ -26,15 +26,25 @@ from model import GroundEstimatorNet
 from modules.loss_func import MaskedHuberLoss,SpatialSmoothLoss
 from dataset_utils.dataset_provider import get_train_loader, get_valid_loader
 from utils.point_cloud_ops import points_to_voxel
-# import ipdb as pdb
+# # import ipdb as pdb
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 use_cuda = torch.cuda.is_available()
 
+# Init logging
+logging.basicConfig()
+formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(message)s')
+logger_main = logging.getLogger().getChild('main')
+logger_main.setLevel(logging.DEBUG)
+
+fh = logging.FileHandler('training.log')
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+logger_main.addHandler(fh)
+
 if use_cuda:
-    print('setting gpu on gpu_id: 0') #TODO: find the actual gpu id being used
-
-
-
+    logger_main.info(f'setting gpu on gpu_id: {torch.cuda.get_device_name()}') #TODO: find the actual gpu id being used
 
 
 
@@ -51,7 +61,7 @@ parser.add_argument('--start_epoch', default=0, type=int, help='epoch number to 
 args = parser.parse_args()
 
 if os.path.isfile(args.config):
-    print("using config file:", args.config)
+    logger_main.info("using config file: %s", args.config)
     with open(args.config) as f:
         config_dict = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -62,15 +72,15 @@ if os.path.isfile(args.config):
     cfg = ConfigClass(**config_dict) # convert python dict to class for ease of use
 
 else:
-    print("=> no config file found at '{}'".format(args.config))
+    logger_main.warn("=> no config file found at '{}'".format(args.config))
 
 #############################################xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx#######################################
 
 
 
 
-train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 4)
-valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 6)
+train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, parent_logger=logger_main)
+valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, parent_logger=logger_main)
 
 model = GroundEstimatorNet(cfg).cuda()
 optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum=0.9, weight_decay=0.0005)
@@ -144,7 +154,7 @@ def train(epoch):
 
 
         if batch_idx % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
+            logger_main.debug('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})'.format(
@@ -216,7 +226,7 @@ def validate():
 
 
             if batch_idx % args.print_freq == 0:
-                print('Test: [{0}/{1}]\t'
+                logger_main.debug('Test: [{0}/{1}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                        batch_idx, len(valid_loader), batch_time=batch_time, loss=losses))
@@ -233,16 +243,16 @@ def main():
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
+            logger_main.info("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             lowest_loss = checkpoint['lowest_loss']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
-            print("=> loaded checkpoint '{}' (epoch {})"
+            logger_main.info("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            logger_main.warn("=> no checkpoint found at '{}'".format(args.resume))
 
 
 
