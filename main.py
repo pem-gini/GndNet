@@ -77,14 +77,26 @@ else:
 #############################################xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx#######################################
 
 
-train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, max_memory=4020256 * 20, parent_logger=logger_main)
-valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, max_memory=4020256 * 10, parent_logger=logger_main)
-model = GroundEstimatorNet(cfg).cuda()
-optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum=0.9, weight_decay=0.0005)
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.8)
+train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, max_memory=4020256 * 100, parent_logger=logger_main)
+valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, max_memory=4020256 * 50, parent_logger=logger_main)
 
-lossHuber = nn.SmoothL1Loss(reduction = "mean").cuda()
-lossSpatial = SpatialSmoothLoss().cuda()
+attempts = 10
+attempt = 0
+
+logger_main.info('Load model to GPU')
+while (attempt <= attempts):
+    try:
+        model = GroundEstimatorNet(cfg).cuda()
+        optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum=0.9, weight_decay=0.0005)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.8)
+
+        lossHuber = nn.SmoothL1Loss(reduction = "mean").cuda()
+        lossSpatial = SpatialSmoothLoss().cuda()
+        break
+    except Exception as e:
+        print(f'Failed to load GPU. Might be busy [{attempt}/{attempts}]: {e}')
+        attempt += 1
+        time.sleep(attempt * 2 + 2)
 
 def train(epoch):
 
@@ -257,7 +269,7 @@ def main():
         validate()
         return
 
-
+    logger_main.info("Start training")
     for epoch in range(args.start_epoch, cfg.epochs):
 
         # adjust_learning_rate(optimizer, epoch)
