@@ -5,6 +5,9 @@ Author: Anshul Paigwar
 email: p.anshul6@gmail.com
 """
 
+# import tracemalloc
+
+# tracemalloc.start()
 
 
 import argparse
@@ -77,8 +80,8 @@ else:
 #############################################xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx#######################################
 
 
-train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, max_memory=4020256 * 100, parent_logger=logger_main)
-valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 200, num_input_features=cfg.input_features, max_memory=4020256 * 50, parent_logger=logger_main)
+train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 4, num_input_features=cfg.input_features, max_memory=4*1.074e9, parent_logger=logger_main)
+valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 6, num_input_features=cfg.input_features, max_memory=1.074e9, parent_logger=logger_main)
 
 attempts = 10
 attempt = 0
@@ -271,7 +274,7 @@ def main():
 
     logger_main.info("Start training")
     for epoch in range(args.start_epoch, cfg.epochs):
-
+        #logger_main.info(f'Current Memory: {tracemalloc.get_traced_memory()}')
         # adjust_learning_rate(optimizer, epoch)
         loss_t = train(epoch)
 
@@ -325,3 +328,4 @@ class AverageMeter(object):
 
 if __name__ == '__main__':
     main()
+    #tracemalloc.stop()

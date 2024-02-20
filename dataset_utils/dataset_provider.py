@@ -124,7 +124,7 @@ class AsyncDataLoader(multiprocessing.Process):
 
 		
 
-class kitti_gnd(Dataset):
+class kitti_gnd_async(Dataset):
 	def __init__(self, data_dir, train = True, skip_frames = 1, num_input_features = 3, max_memory=4e6, logger: logging.Logger=logging.root):
 		self.train = train
 		self.logger = logger
@@ -165,59 +165,54 @@ class kitti_gnd(Dataset):
 			self.shm_data.close()
 			self.shm_label.close()
 
-# class kitti_gnd(Dataset):
-# 	def __init__(self, data_dir, train = True):
-# 		self.train = train
 
-# 		if self.train:
-# 			self.train_data = []
-# 			self.train_labels = []
-# 			print('loading training data ')
-# 			seq_folders = os.listdir(data_dir +"training/")
-# 			for seq_num in seq_folders:
-# 				seq_path = data_dir +"training/"+ "seq_"+ "%03d" % int(seq_num.split("_")[1])
-# 				files_in_seq = os.listdir(seq_path + '/reduced_velo/')
+class kitti_gnd_sync(Dataset):
+	def __init__(self, data_dir, train = True, skip_frames = 1, num_input_features=3, max_memory=1e9, logger: logging.Logger=logging.root):
+		self.train = train
+		self.logger = logger
+		self.max_memory = max_memory
+		self.num_input_features = num_input_features
 
-# 				for data_num in range(0, len(files_in_seq)):
-# 					data_path = seq_path + '/reduced_velo/' + "%06d.npy" % data_num
-# 					self.train_data.append(data_path)
+		self.dir_name = 'training' if train else 'validation'
+		self.data_path = os.path.join(data_dir, self.dir_name)
 
-# 					label_path = seq_path + '/gnd_labels/' + "%06d.npy" % data_num
-# 					self.train_labels.append(label_path)
+		self.current_memory_data = 0
+		self.current_memory_labels = 0
+		self.last_memory_size_frame = 0
+		self.loaded_data = []
+		self.loaded_labels = []
 
-# 		else:
-# 			self.valid_data = []
-# 			self.valid_labels = []
-# 			print('loading validation data ')
-# 			seq_folders = os.listdir(data_dir +"validation/")
-# 			for seq_num in seq_folders:
-# 				seq_path = data_dir +"validation/"+ "seq_"+ "%03d" % int(seq_num.split("_")[1])
-# 				files_in_seq = os.listdir(seq_path + '/reduced_velo/')
+		self.logger.info(f'loading {self.dir_name} data')
+		seq_folders = os.listdir(self.data_path)
+		for seq_num in seq_folders:
+			seq_path = os.path.join(self.data_path, seq_num)
+			files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo'))
 
-# 				for data_num in range(0, len(files_in_seq)):
-# 					data_path = seq_path + '/reduced_velo/' + "%06d.npy" % data_num
-# 					self.valid_data.append(data_path)
+			for data_num in range(0, len(files_in_seq),skip_frames): # too much of dataset we skipping files
+				if self.current_memory_data + self.current_memory_labels + self.last_memory_size_frame > self.max_memory:
+					self.logger.warn(f'Stop loading data at frame {data_num} in seq {seq_num}!\n\tReached {self.current_memory_data} Bytes of data + {self.current_memory_labels} Bytes of labels (={self.current_memory_data+self.current_memory_labels} Bytes). Would go over the limit of {self.max_memory} Bytes')
+					return
+				data_file_path = os.path.join(seq_path, 'reduced_velo', "%06d.npy" % data_num)
+				point_set = np.load(data_file_path)[:,:self.num_input_features] #(N,3) point set
+				self.loaded_data.append(point_set)
 
-# 					label_path = seq_path + '/gnd_labels/' + "%06d.npy" % data_num
-# 					self.valid_labels.append(label_path)
+				self.current_memory_data += point_set.nbytes
 
+				label_path = os.path.join(seq_path, 'gnd_labels', "%06d.npy" % data_num)
+				label = np.load(label_path) # (W x L)
+				self.loaded_labels.append(label)
 
-# 	def __getitem__(self, index):
-# 		if self.train:
-# 			data = np.load(self.train_data[index])#(N,4) point set
-# 			label = np.load(self.train_labels[index])# (W x L)
-# 			return data, label
-# 		else:
-# 			data = np.load(self.valid_data[index])#(N,4) point set
-# 			label = np.load(self.valid_labels[index])# (W x L)
-# 			return data, label
+				self.current_memory_labels += label.nbytes
+		
+		self.logger.info(f'Loaded {self.current_memory_data} Bytes of data + {self.current_memory_labels} Bytes of labels (={self.current_memory_data+self.current_memory_labels} Bytes)')
 
 
-# 	def __len__(self):
-# 		if self.train:
-# 			return len(self.train_data)
-# 		else:
-# 			return len(self.valid_data)
+	def __getitem__(self, index):
+		return self.loaded_data[index], self.loaded_labels[index]
+
+
+	def __len__(self):
+		return len(self.loaded_data)
 
 
 
@@ -236,7 +231,7 @@ def get_valid_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_
 		pin_memory = True
 
 
-	valid_loader = DataLoader(kitti_gnd(data_dir,train = False, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
+	valid_loader = DataLoader(kitti_gnd_sync(data_dir,train = False, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
 					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=False,drop_last=True)
 
 	parent_logger.info("Valid Data size %d",len(valid_loader)*batch)
@@ -260,7 +255,7 @@ def get_train_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_
 		num_workers = 4
 		pin_memory = True
 
-	train_loader = DataLoader(kitti_gnd(data_dir,train = True, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
+	train_loader = DataLoader(kitti_gnd_async(data_dir,train = True, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
 					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=False,drop_last=True)
 
 	parent_logger.info("Train Data size %d",len(train_loader)*batch)
