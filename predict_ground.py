@@ -48,10 +48,12 @@ if use_cuda:
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--config', default='config/config_kittiSem.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
+parser.add_argument('--resume', default='trained_models/2024_02_18_model_best.pth.tar', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
+parser.add_argument('--config', default='config/config_kittiSem2.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
 parser.add_argument('-v', '--visualize', dest='visualize', action='store_true', help='visualize model on validation set')
 parser.add_argument('-gnd', '--visualize_gnd', dest='visualize_gnd', action='store_true', help='visualize ground elevation')
+parser.add_argument('--gnd_truth', default='', type=str, metavar='PATH', help='visualize ground truth elevation')
+parser.add_argument('-l', '--labels', default='', dest='visualize_labels', type=str, metavar='PATH', help='visualize labels')
 parser.add_argument('--pcl', default="/home/anshul/es3cap/semkitti_gndnet/kitti_semantic/dataset/sequences/07/", 
                         type=str, metavar='PATH', help='path to config file (default: none)')
 args = parser.parse_args()
@@ -87,7 +89,9 @@ if args.visualize:
     rclpy.init(args=sys.argv)
     node = rclpy.create_node('gnd_data_provider')
     pcl_pub = node.create_publisher(PointCloud2, "/kitti/velo/pointcloud", 10)
+    labels_pub = node.create_publisher(PointCloud2, "/kitti/velo/labels", 10)
     marker_pub_2 = node.create_publisher(Marker, "/kitti/gnd_marker_pred", 10)
+    marker_pub_gnd_truth = node.create_publisher(Marker, "/kitti/gnd_marker_gnd_truth", 10)
 
 model = GroundEstimatorNet(cfg).cpu()
 optimizer = optim.SGD(model.parameters(), lr=cfg.lr, momentum=0.9, weight_decay=0.0005)
@@ -114,10 +118,15 @@ def InferGround(cloud):
     return output
 
 
-def predict_ground(pcl_file):
-    point_cloud = open3d.io.read_point_cloud(pcl_file)
-    points = np.asarray(point_cloud.points) # np.fromfile(pcl_file, dtype=np.float32).reshape(-1, 4)
-    points = np.c_[points[:,2]*-1, points[:,0], (points[:,1]-5)/3, np.zeros(points.shape[0])]
+def predict_ground(pcl_file: str):
+    #point_cloud = open3d.io.read_point_cloud(pcl_file)
+    if pcl_file.endswith('npy'):
+        points = np.load(pcl_file)[:,:cfg.input_features]
+        points[:,2] -= cfg.lidar_height
+        print(points.shape)
+    else:
+        points = np.fromfile(pcl_file, dtype=np.float32).reshape(-1, 4)[:,:cfg.input_features]
+    #points = np.c_[points[:,2]*-1, points[:,0], (points[:,1]-5)/3, np.zeros(points.shape[0])]
 
     # points = points[points[:,2] < 3.5]
 
@@ -132,7 +141,17 @@ def predict_ground(pcl_file):
     if args.visualize:
         np2ros_pub_2(node, points, pcl_pub, None, pred_GndSeg)
         if args.visualize_gnd:
+            histogram = np.histogram(pred_gnd, bins=10)
+            print(histogram)
             gnd_marker_pub(node, pred_gnd, marker_pub_2, cfg, color = "red")
+        if args.gnd_truth != '':
+            #assert(os.path.exists(args.visualize_gnd_truth), "The ground truth file does not exist!")
+            ground_truth = np.load(args.gnd_truth)
+            gnd_marker_pub(node, ground_truth, marker_pub_gnd_truth, cfg, color = "green")
+        if args.visualize_labels != '':
+            #assert(os.path.exists(args.visualize_gnd_truth), "The ground truth file does not exist!")
+            labels = np.load(args.visualize_gnd_truth, dtype=np.int16).reshape(-1, 2)[:, 0]
+            np2ros_pub_2(node, points, labels_pub, None, labels / np.max(labels))
         # pdb.set_trace()
 
 

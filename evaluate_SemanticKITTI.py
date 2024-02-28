@@ -47,11 +47,11 @@ if use_cuda:
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--config', default='config/config_kittiSem.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
+parser.add_argument('--resume', default='trained_models/checkpoint.pth.tar', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
+parser.add_argument('--config', default='config/config_kittiSem2.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
 parser.add_argument('-v', '--visualize', dest='visualize', action='store_true', help='visualize model on validation set')
 parser.add_argument('-gnd', '--visualize_gnd', dest='visualize_gnd', action='store_true', help='visualize ground elevation')
-parser.add_argument('--data_dir', default="/home/anshul/es3cap/semkitti_gndnet/kitti_semantic/dataset/sequences/07/", 
+parser.add_argument('--data_dir', default="data/testing/00/", 
                         type=str, metavar='PATH', help='path to config file (default: none)')
 args = parser.parse_args()
 
@@ -153,7 +153,7 @@ def evaluate_SemanticKITTI(data_dir):
 
     velodyne_dir = data_dir + "velodyne/"
     label_dir = data_dir + 'labels/'
-    frames = os.listdir(velodyne_dir)
+    frames = list(sorted(os.listdir(label_dir)))
     # calibration = parse_calibration(os.path.join(data_dir, "calib.txt"))
     # poses = parse_poses(os.path.join(data_dir, "poses.txt"), calibration)
     # rate = rospy.Rate(2) # 10hz
@@ -164,15 +164,11 @@ def evaluate_SemanticKITTI(data_dir):
     prec_score = 0
     recall_score = 0
     print(len(frames))
-    for f in range(len(frames)*2):
-        if f % 2 == 1:
-            with_zero = True
-            f = (f-1)/2
-        else:
-            with_zero = False
-            f = f / 2
-        points_path = os.path.join(velodyne_dir, "%06d.bin" % f)
-        points = np.fromfile(points_path, dtype=np.float32).reshape(-1, 4)
+    for f in range(len(frames)):
+        
+        file_name = frames[int(f)].split('.')[0]
+        points_path = os.path.join(velodyne_dir, "%s.bin" % file_name)
+        points = np.fromfile(points_path, dtype=np.float32).reshape(-1, 4)[:, :3]
         
         # pcd = o3d.geometry.PointCloud()
         # pcd.points = o3d.utility.Vector3dVector(points[:,:3])
@@ -181,18 +177,16 @@ def evaluate_SemanticKITTI(data_dir):
 
         # exit()
 
-        print("%06d.bin - %d" % (f,with_zero))
-        if with_zero:
-            points[:,3] = 0
+        print("%s.bin" % (file_name))
 
-        label_path = os.path.join(label_dir, "%06d.label" % f)
+        label_path = os.path.join(label_dir, "%s.label" % file_name)
         sem_label = np.fromfile(label_path, dtype=np.uint32)
         sem_label = sem_label.reshape((-1))
 
         pred_gnd = InferGround(points)
         pred_gnd = pred_gnd.cpu().numpy()
         # TODO: Remove the points which are very below the ground
-        pred_GndSeg = segment_cloud(points.copy(),np.asarray(cfg.grid_range), cfg.voxel_size[0], elevation_map = pred_gnd.T, threshold = 0.0)
+        pred_GndSeg = segment_cloud(points.copy(),np.asarray(cfg.grid_range), cfg.voxel_size[0], elevation_map = pred_gnd.T, threshold = 0)
         GndSeg = get_GndSeg(sem_label, GndClasses = [40, 44, 48, 49,60,72])
         
         if args.visualize:

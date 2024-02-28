@@ -232,7 +232,7 @@ def get_valid_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_
 
 
 	valid_loader = DataLoader(kitti_gnd_sync(data_dir,train = False, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
-					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=False,drop_last=True)
+					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=True,drop_last=True)
 
 	parent_logger.info("Valid Data size %d",len(valid_loader)*batch)
 
@@ -255,8 +255,8 @@ def get_train_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_
 		num_workers = 4
 		pin_memory = True
 
-	train_loader = DataLoader(kitti_gnd_async(data_dir,train = True, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
-					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=False,drop_last=True)
+	train_loader = DataLoader(kitti_gnd_sync(data_dir,train = True, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
+					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=True,drop_last=True)
 
 	parent_logger.info("Train Data size %d",len(train_loader)*batch)
 

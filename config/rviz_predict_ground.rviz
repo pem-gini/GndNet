@@ -7,10 +7,13 @@ Panels:
         - /Global Options1
         - /Status1
         - /PointCloud21
-        - /Marker1
-        - /Marker1/Topic1
-        - /PointCloud22
-      Splitter Ratio: 0.5
+        - /Ground Prediction1
+        - /Ground Prediction1/Topic1
+        - /Ground Truth1
+        - /Ground Truth1/Topic1
+        - /Labels1
+        - /Labels1/Topic1
+      Splitter Ratio: 0.5647059082984924
     Tree Height: 708
   - Class: rviz_common/Selection
     Name: Selection
@@ -29,7 +32,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
 Visualization Manager:
   Class: ""
   Displays:
@@ -61,16 +64,16 @@ Visualization Manager:
       Channel Name: intensity
       Class: rviz_default_plugins/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: ""
+      Color Transformer: Intensity
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 4096
+      Max Intensity: 1
       Min Color: 0; 0; 0
-      Min Intensity: 0
+      Min Intensity: -1
       Name: PointCloud2
-      Position Transformer: ""
+      Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
       Size (m): 0.009999999776482582
@@ -87,9 +90,9 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/Marker
       Enabled: true
-      Name: Marker
+      Name: Ground Prediction
       Namespaces:
-        {}
+        "": true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -97,6 +100,19 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /kitti/gnd_marker_pred
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Ground Truth
+      Namespaces:
+        "": true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /kitti/gnd_marker_gnd_truth
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -116,7 +132,7 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: PointCloud2
+      Name: Labels
       Position Transformer: ""
       Selectable: true
       Size (Pixels): 3
@@ -128,7 +144,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /kitti/raw/pointcloud
+        Value: /kitti/velo/labels
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -178,7 +194,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 10
+      Distance: 20.171789169311523
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -193,10 +209,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.785398006439209
+      Pitch: 0.1453978568315506
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.785398006439209
+      Yaw: 0.1553957760334015
     Saved: ~
 Window Geometry:
   Displays:
@@ -214,5 +230,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1908
-  X: -32
-  Y: -32
+  X: -34
+  Y: -31
