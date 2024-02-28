@@ -43,6 +43,7 @@ def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red"):
     length = int(cfg.grid_range[2] - cfg.grid_range[0]) # x direction
     width = int(cfg.grid_range[3] - cfg.grid_range[1])    # y direction
     print(type(ros_node.get_clock().now()))
+
     gnd_marker = Marker()
     gnd_marker.header.frame_id = "map"
     gnd_marker.header.stamp = ros_node.get_clock().now().to_msg()
@@ -52,53 +53,55 @@ def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red"):
     gnd_marker.scale.y = 0.05
     gnd_marker.scale.z = 0.05
     if(color == "red"):
-        gnd_marker.color.a = 1.0
+        gnd_marker.color.a = 0.5
         gnd_marker.color.r = 1.0
         gnd_marker.color.g = 0.0
         gnd_marker.color.b = 0.0
     if(color == "green"):
-        gnd_marker.color.a = 1.0
+        gnd_marker.color.a = 0.5
         gnd_marker.color.r = 0.0
         gnd_marker.color.g = 1.0
         gnd_marker.color.b = 0.0
     gnd_marker.points = []
 
-# gnd_labels are arranged in reverse order
+    # gnd_labels are arranged in reverse order
+    x_step = length / gnd_label.shape[0]
+    y_step = width / gnd_label.shape[1]
     for j in range(gnd_label.shape[0]):
         for i in range(gnd_label.shape[1]):
             pt1 = Point()
-            pt1.x = float(i + cfg.grid_range[0])
-            pt1.y = float(j + cfg.grid_range[1])
+            pt1.x = float(i*x_step + cfg.grid_range[0])
+            pt1.y = float(j*y_step + cfg.grid_range[1])
             pt1.z = float(gnd_label[j,i])
 
             if j>0 :
                 pt2 = Point()
-                pt2.x = float(i + cfg.grid_range[0])
-                pt2.y = float(j-1 +cfg.grid_range[1])
+                pt2.x = float(i*x_step + cfg.grid_range[0])
+                pt2.y = float((j-1)*y_step +cfg.grid_range[1])
                 pt2.z = float(gnd_label[j-1, i])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if i>0 :
                 pt2 = Point()
-                pt2.x = float(i -1 + cfg.grid_range[0])
-                pt2.y = float(j + cfg.grid_range[1])
+                pt2.x = float((i-1)*x_step + cfg.grid_range[0])
+                pt2.y = float(j*y_step + cfg.grid_range[1])
                 pt2.z = float(gnd_label[j, i-1])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if j < width-1 :
                 pt2 = Point()
-                pt2.x = float(i + cfg.grid_range[0])
-                pt2.y = float(j + 1 + cfg.grid_range[1])
+                pt2.x = float(i*x_step + cfg.grid_range[0])
+                pt2.y = float((j+1)*y_step + cfg.grid_range[1])
                 pt2.z = float(gnd_label[j+1, i])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
 
             if i < length-1 :
                 pt2 = Point()
-                pt2.x = float(i + 1 + cfg.grid_range[0])
-                pt2.y = float(j + cfg.grid_range[1])
+                pt2.x = float((i+1)*x_step + cfg.grid_range[0])
+                pt2.y = float(j*y_step + cfg.grid_range[1])
                 pt2.z = float(gnd_label[j, i+1])
                 gnd_marker.points.append(pt1)
                 gnd_marker.points.append(pt2)
