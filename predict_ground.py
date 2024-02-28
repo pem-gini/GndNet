@@ -136,7 +136,7 @@ def predict_ground(pcl_file: str):
     pred_gnd = InferGround(points)
     pred_gnd = pred_gnd.cpu().numpy()
     # TODO: Remove the points which are very below the ground
-    pred_GndSeg = segment_cloud(points.copy(),np.asarray(cfg.grid_range), cfg.voxel_size[0], elevation_map = pred_gnd.T, threshold = 0.0)
+    pred_GndSeg = segment_cloud(points.copy(),np.asarray(cfg.grid_range), cfg.voxel_size[0], elevation_map = pred_gnd.T, threshold = 0.08)
     
     if args.visualize:
         np2ros_pub_2(node, points, pcl_pub, None, pred_GndSeg)

@@ -189,16 +189,17 @@ class kitti_gnd_sync(Dataset):
 			files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo'))
 
 			for data_num in range(0, len(files_in_seq),skip_frames): # too much of dataset we skipping files
+				file_name = files_in_seq[data_num]
 				if self.current_memory_data + self.current_memory_labels + self.last_memory_size_frame > self.max_memory:
-					self.logger.warn(f'Stop loading data at frame {data_num} in seq {seq_num}!\n\tReached {self.current_memory_data} Bytes of data + {self.current_memory_labels} Bytes of labels (={self.current_memory_data+self.current_memory_labels} Bytes). Would go over the limit of {self.max_memory} Bytes')
+					self.logger.warn(f'Stop loading data at frame {file_name} in seq {seq_num}!\n\tReached {self.current_memory_data} Bytes of data + {self.current_memory_labels} Bytes of labels (={self.current_memory_data+self.current_memory_labels} Bytes). Would go over the limit of {self.max_memory} Bytes')
 					return
-				data_file_path = os.path.join(seq_path, 'reduced_velo', "%06d.npy" % data_num)
+				data_file_path = os.path.join(seq_path, 'reduced_velo', file_name)
 				point_set = np.load(data_file_path)[:,:self.num_input_features] #(N,3) point set
 				self.loaded_data.append(point_set)
 
 				self.current_memory_data += point_set.nbytes
 
-				label_path = os.path.join(seq_path, 'gnd_labels', "%06d.npy" % data_num)
+				label_path = os.path.join(seq_path, 'gnd_labels', file_name)
 				label = np.load(label_path) # (W x L)
 				self.loaded_labels.append(label)
 
