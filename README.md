@@ -1,4 +1,7 @@
 # GndNet: Fast Ground plane Estimation and Point Cloud Segmentation for Autonomous Vehicles.
+This is the original GndNet Readme. For all current informations see the part [below](#gndnet-gini-version).
+
+
 Authors: Anshul Paigwar, Ozgur Erkent, David Sierra Gonzalez, Christian Laugier
 
 <img src="https://github.com/anshulpaigwar/GndNet/blob/master/doc/GndNet_Teaser.png" alt="drawing" width="400"/>
@@ -117,3 +120,104 @@ We welcome you for contributing to this repo, and feel free to contact us for an
 [1] L. Rummelhard, A. Paigwar, A. Nègre and C. Laugier, "Ground estimation and point cloud segmentation using SpatioTemporal Conditional Random Field," 2017 IEEE Intelligent Vehicles Symposium (IV), Los Angeles, CA, 2017, pp. 1105-1110, doi: 10.1109/IVS.2017.7995861.
 
 [2] Behley, J., Garbade, M., Milioto, A., Quenzel, J., Behnke, S., Stachniss, C., & Gall, J. (2019). SemanticKITTI: A dataset for semantic scene understanding of lidar sequences. In Proceedings of the IEEE International Conference on Computer Vision (pp. 9297-9307).
+
+# GndNET Gini Version
+For the gini we adapted the original GndNet slightly to meet all criteria and have higher accuracies using a stereo camera instead of Lidar data.
+
+## Custom training
+### Data preperation (Custom Version)
+For the training of the network we use a new ground truth computation compared to the original version. This is mainly to get rid of the falsly classified objects close to the ground, that existed mainly because of too high tolerances. In the original version the ground was elevated about half a meter over the actual ground and also smoothing was too big for an accurate prediction on everything beneath 0.5 to 1 m.
+
+The new algorithm uses: TODO...
+
+# Training Algorithm
+While the model itself was untouched so far, the training algorithm changed slightly the in sense of data loading. We added a ring buffer to dynamically load big datasets on the go without the requirement to have everything in memory at once. This significantly reduced hardware requirements while reducing performance only about 1%. 
+
+In the current configuration the training data will use the ring buffer with a buffer size of about 4 GB, while the validation data is loaded completely into memory (~1GB). Buffer sizes can be changed in the main file at the data loading parameters, and switching out the async to sync or the other way around can easliy be done in the [`dataset_utils/dataset_provider.py`](dataset_utils/dataset_provider.py#L239) file.
+
+For there to be little to no reduction in performance, the training script will create a seperate process that only manages the ring buffer and offering everthing in a shared memory for the main process to work with.
+
+# Training Process
+To train the model, the [`main.py`](main.py) file needs to be executed using the proper config file. This requres all packages listed in the [`setup.sh`](setup.sh) script to be installed and an active Cuda environment with an available GPU. 
+
+If training on a local machine, you're all set and can follow the general training procedure.
+
+### Training on the RWTH HPC Cluster
+#### Connecting to the Cluster
+To connect to the HPC cluster, use one of the login nodes (login18-1.hpc.itc.rwth-aachen.de). Keep in mind that if you want to interactivaly test your script and not just submit a job, you will need to be on a login node with a GPU installed (e.g. login18-g-1.hpc.itc.rwth-aachen.de). For a full and up-to-date list, see [here](https://help.itc.rwth-aachen.de/en/service/rhr4fjjutttf/article/0a23d513f31b4cf1849986aaed475789/).
+
+Once you decided on a login node, just ssh onto it (provided you [already set up](https://help.itc.rwth-aachen.de/en/service/rhr4fjjutttf/article/598d0f7f78cb4ab8b81af1b3f68ba831/) your HPC account and are in the RWTH network either live or via VPN):
+
+```bash
+ssh -l ab123456 login18-1.hpc.itc.rwth-aachen.de
+```
+(replace ab123456 with your RWTH user name)
+
+The server will ask for the HPC password set in the RegApp (Not your RWTH Password!) and you will need your 2FA, which should also be set up within the [RegApp](https://regapp.itc.rwth-aachen.de/) (Under Index/My Tokens).
+
+**If your are using VS Code to connect to the cluster, activate the `  remote.SSH.showLoginTerminal
+` setting, otherwise you will not be prompted with the 2FA and cannot log in!**
+
+After the login was successfull, follow the rest of the Readme.
+
+#### The Slurm Script
+The RWTH High Performance Cluster is using a schedular called `slurm`. It needs a shell script as an entry point, which includes both the configurations and the commands to execute. 
+
+To run the data preparation, there is already a [script](run_data_preparation_cluster.sh) that will execute the [preparation](#data-preperation-custom-version) as described above. 
+
+To run the actual training, there is another script. The [`run_model_training_cluster.sh`](run_model_training_cluster.sh), which will configure the HPC and start the training:
+
+```bash
+#!/usr/bin/zsh
+
+#SBATCH --job-name=GND_NET_MODEL_TRAINING
+#SBATCH --gres=gpu:1
+#SBATCH --output=output.%J.txt
+#SBATCH --time=10:00:00
+
+export CONDA_ROOT=$HOME/miniconda3
+export PATH="$CONDA_ROOT/bin:$PATH"
+
+source activate gndnet
+
+module load CUDA
+echo; export; echo; nvidia-smi; echo
+
+python3 main.py -s --config config/config_kittiSem2.yaml
+```
+
+The `#SBATCH` lines, are the configurations for the `slurm` scheduler. We are configuring the name of the job, the number of GPUs (1), our output file (%J will use the job id), the max runtime, the amount of memory we need and the number of CPUs.
+
+After the slurm parameters, the actual script is starting. Because the default HPC environment has the wrong python version and some conflicts we don't want, the training will happen within a conda environment. This environment needs to be created first, if not the case yet. Simply execute the [`setup_conda.sh`](setup_conda.sh) script.
+
+Once we are in the correct environment, the `main.py` training process can be started. 
+
+#### Starting the Job
+To start the training job, use the slurm command line tool:
+
+```shell
+sbatch run_model_training_cluster.sh
+```
+
+To check if the job is waiting or running, use:
+
+```shell
+squeue -u $USER
+```
+
+To cancel:
+
+```shell
+scancel JOBID
+```
+
+To check your current HPC quota (will only update after midnight):
+```shell
+r_wlm_usage -q
+```
+
+And to have a live dashboard of the current (and past) processes:
+
+[https://perfmon.hpc.itc.rwth-aachen.de/](https://perfmon.hpc.itc.rwth-aachen.de/)
+
+For more slurm commands, see the [official RWTH documentation](https://help.itc.rwth-aachen.de/en/service/rhr4fjjutttf/article/3d20a87835db4569ad9094d91874e2b4/).
