@@ -22,7 +22,7 @@ import numpy as np
 # from modules import gnd_est_Loss
 from model import GroundEstimatorNet
 from modules.loss_func import MaskedHuberLoss
-from dataset_utils.dataset_provider import get_train_loader, get_valid_loader
+from dataset_utils.dataset_provider import get_train_loader, get_valid_loader, DataAugmentation, AugmentationConfig
 from utils.utils import lidar_to_img, lidar_to_heightmap, segment_cloud
 from utils.point_cloud_ops import points_to_voxel
 # import ipdb as pdb
@@ -49,7 +49,7 @@ if use_cuda:
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--resume', default='trained_models/2024_02_18_model_best.pth.tar', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--config', default='config/config_kittiSem2.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
+parser.add_argument('--config', default='config/config_custom_local.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
 parser.add_argument('-v', '--visualize', dest='visualize', action='store_true', help='visualize model on validation set')
 parser.add_argument('-gnd', '--visualize_gnd', dest='visualize_gnd', action='store_true', help='visualize ground elevation')
 parser.add_argument('--gnd_truth', default='', type=str, metavar='PATH', help='visualize ground truth elevation')
@@ -133,6 +133,24 @@ def predict_ground(pcl_file: str):
     print(np.amin(points, axis=0))
     print(np.amax(points, axis=0))
 
+    aug_config = AugmentationConfig(
+        grid=cfg.grid_range,
+        keep_original=cfg.keep_original,
+        num_rotations=cfg.num_rotations,
+        num_height_var=cfg.num_height_var,
+        maxFrontSlope=cfg.maxFrontSlope,
+        maxSideTild=cfg.maxSideTild,
+        maxRotation=cfg.maxRotation,
+        maxHeight=cfg.maxHeight,
+    )
+
+    augmentation = DataAugmentation(config=aug_config)
+
+    ground_truth = np.load(args.gnd_truth)
+    points_, ground_truth_ = augmentation.getAugmentedData(points.reshape((1,)+points.shape), ground_truth.reshape((1,)+ground_truth.shape))
+    points = points_[0]
+    ground_truth = ground_truth_[0]
+
     pred_gnd = InferGround(points)
     pred_gnd = pred_gnd.cpu().numpy()
     # TODO: Remove the points which are very below the ground
@@ -146,7 +164,7 @@ def predict_ground(pcl_file: str):
             gnd_marker_pub(node, pred_gnd, marker_pub_2, cfg, color = "red")
         if args.gnd_truth != '':
             #assert(os.path.exists(args.visualize_gnd_truth), "The ground truth file does not exist!")
-            ground_truth = np.load(args.gnd_truth)
+            #ground_truth = np.load(args.gnd_truth)
             gnd_marker_pub(node, ground_truth, marker_pub_gnd_truth, cfg, color = "green")
         if args.visualize_labels != '':
             #assert(os.path.exists(args.visualize_gnd_truth), "The ground truth file does not exist!")
@@ -173,8 +191,9 @@ def main():
     else:
         raise Exception('please specify checkpoint to load')
 
-    predict_ground(args.pcl)
-
+    for i in range(20):
+        predict_ground(args.pcl)
+        time.sleep(2)
 
 
 if __name__ == '__main__':

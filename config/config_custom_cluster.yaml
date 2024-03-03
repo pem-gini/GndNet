@@ -29,3 +29,12 @@ with_distance: false
 # loss_param
 alpha: 0.9 # per cell loss
 beta: 0.1 # Smoothness loss
+
+# augmentation paramters
+keep_original: false
+num_rotations: 1
+num_height_var: 2
+maxFrontSlope: 5
+maxSideTild: 5
+maxRotation: 0
+maxHeight: 3

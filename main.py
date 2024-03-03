@@ -27,7 +27,7 @@ import numpy as np
 # from modules import gnd_est_Loss
 from model import GroundEstimatorNet
 from modules.loss_func import MaskedHuberLoss,SpatialSmoothLoss
-from dataset_utils.dataset_provider import get_train_loader, get_valid_loader
+from dataset_utils.dataset_provider import get_train_loader, get_valid_loader, AugmentationConfig
 from utils.point_cloud_ops import points_to_voxel
 # # import ipdb as pdb
 
@@ -57,7 +57,7 @@ if use_cuda:
 parser = argparse.ArgumentParser()
 parser.add_argument('--print-freq', '-p', default=100, type=int, metavar='N', help='print frequency (default: 50)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--config', default='config/config_kittiSem.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
+parser.add_argument('--config', default='config/config_custom_local.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 parser.add_argument('-s', '--save_checkpoints', dest='save_checkpoints', action='store_true',help='evaluate model on validation set')
 parser.add_argument('--start_epoch', default=0, type=int, help='epoch number to start from')
@@ -79,9 +79,19 @@ else:
 
 #############################################xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx#######################################
 
+augmentation_config = AugmentationConfig(
+    grid=cfg.grid_range,
+    keep_original=cfg.keep_original,
+    num_rotations=cfg.num_rotations,
+    num_height_var=cfg.num_height_var,
+    maxFrontSlope=cfg.maxFrontSlope,
+    maxSideTild=cfg.maxSideTild,
+    maxRotation=cfg.maxRotation,
+    maxHeight=cfg.maxHeight,
+)
 
-train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 4, num_input_features=cfg.input_features, max_memory=4*1.074e9, parent_logger=logger_main)
-valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 6, num_input_features=cfg.input_features, max_memory=1.074e9, parent_logger=logger_main)
+train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 2, augmentation_config=augmentation_config, num_input_features=cfg.input_features, max_memory=4*1.074e9, parent_logger=logger_main)
+valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 3, augmentation_config=augmentation_config, num_input_features=cfg.input_features, max_memory=1.074e9, parent_logger=logger_main)
 
 attempts = 10
 attempt = 0
@@ -146,8 +156,10 @@ def train(epoch):
 
         output = model(voxels, coors, num_points)
         # pdb.set_trace()
-
-        loss = cfg.alpha * lossHuber(output, labels) + cfg.beta * lossSpatial(output)
+        
+        #l = [cfg.alpha, lossHuber(output, labels), cfg.beta, lossSpatial(output)]
+        loss = cfg.alpha * lossHuber(output, labels) + cfg.beta * lossSpatial(output) # l[0]*l[1]+l[2]*l[3] #
+        #logger_main.debug(f'Loss: {l[0]}*{l[1]}+{l[2]}*{l[3]}={loss}')
         # loss = lossHuber(output, labels)
         # loss = masked_huber_loss(output, labels, mask)
 
@@ -169,7 +181,7 @@ def train(epoch):
             logger_main.debug('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})'.format(
+                  'Loss {loss.val:.6f} ({loss.avg:.6f})'.format(
                    epoch, batch_idx, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses))
 

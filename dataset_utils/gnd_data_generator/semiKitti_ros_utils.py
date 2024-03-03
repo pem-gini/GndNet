@@ -161,7 +161,7 @@ class KittiSemanticDataGeneratorNode(rclpy.node.Node):
         super().__init__('gnd_data_provider')
 
         self.data_generator = data_generator
-        data_generator.logger = self.get_logger().info
+        data_generator.logger = self.get_logger()
 
         self.pcl_pub = self.create_publisher(PointCloud2, "/kitti/velo/pointcloud", 10)
         self.pcl_pub2 = self.create_publisher(PointCloud2, "/kitti/raw/pointcloud", 10)
@@ -170,7 +170,7 @@ class KittiSemanticDataGeneratorNode(rclpy.node.Node):
         self.timer = self.create_timer(0.1, self.kitti_semantic_data_generate)
 
         if fig != None:
-            self.create_timer(0.05, fig.canvas.flush_events)
+            self.create_timer(2, fig.canvas.flush_events)
 
     def kitti_semantic_data_generate(self):
         hasNextFrame = self.data_generator.kitti_semantic_data_generate()
@@ -185,6 +185,7 @@ class KittiSemanticDataGeneratorNode(rclpy.node.Node):
             #np2ros_pub(cloud, self.pcl_pub, timestamp)
             np2ros_pub_2(self.data_generator.points, self.pcl_pub2, timestamp, self.data_generator.seg.T)
             
+            self.get_logger().info(f'{self.data_generator.gnd_label.shape}')
             gnd_marker_pub(self.data_generator.gnd_label, self.marker_pub, timestamp)
             # print(points.shape)
             # pdb.set_trace()
