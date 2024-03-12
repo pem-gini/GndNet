@@ -54,6 +54,7 @@ parser.add_argument('-v', '--visualize', dest='visualize', action='store_true', 
 parser.add_argument('-gnd', '--visualize_gnd', dest='visualize_gnd', action='store_true', help='visualize ground elevation')
 parser.add_argument('--gnd_truth', default='', type=str, metavar='PATH', help='visualize ground truth elevation')
 parser.add_argument('-l', '--labels', default='', dest='visualize_labels', type=str, metavar='PATH', help='visualize labels')
+parser.add_argument('-a', '--augment', dest='augment', action='store_true', help='Augment point cloud')
 parser.add_argument('--pcl', default="/home/anshul/es3cap/semkitti_gndnet/kitti_semantic/dataset/sequences/07/", 
                         type=str, metavar='PATH', help='path to config file (default: none)')
 args = parser.parse_args()
@@ -123,7 +124,11 @@ def predict_ground(pcl_file: str):
     if pcl_file.endswith('npy'):
         points = np.load(pcl_file)[:,:cfg.input_features]
         points[:,2] -= cfg.lidar_height
+        if points.shape[1] < cfg.input_features:
+            print(f'Add fake data: {(points.shape[0],cfg.input_features-points.shape[1])}')
+            points = np.concatenate((points, np.ones((points.shape[0],cfg.input_features-points.shape[1]))), axis=1)
         print(points.shape)
+        #points[:,2] += .1
     else:
         points = np.fromfile(pcl_file, dtype=np.float32).reshape(-1, 4)[:,:cfg.input_features]
     #points = np.c_[points[:,2]*-1, points[:,0], (points[:,1]-5)/3, np.zeros(points.shape[0])]
@@ -133,23 +138,27 @@ def predict_ground(pcl_file: str):
     print(np.amin(points, axis=0))
     print(np.amax(points, axis=0))
 
-    aug_config = AugmentationConfig(
-        grid=cfg.grid_range,
-        keep_original=cfg.keep_original,
-        num_rotations=cfg.num_rotations,
-        num_height_var=cfg.num_height_var,
-        maxFrontSlope=cfg.maxFrontSlope,
-        maxSideTild=cfg.maxSideTild,
-        maxRotation=cfg.maxRotation,
-        maxHeight=cfg.maxHeight,
-    )
+    if args.gnd_truth != '':
+        ground_truth = np.load(args.gnd_truth)
+    else:
+        ground_truth = np.zeros((50,50))
+    if args.augment:
+        aug_config = AugmentationConfig(
+            grid=cfg.grid_range,
+            keep_original=cfg.keep_original,
+            num_rotations=cfg.num_rotations,
+            num_height_var=cfg.num_height_var,
+            maxFrontSlope=cfg.maxFrontSlope,
+            maxSideTild=cfg.maxSideTild,
+            maxRotation=cfg.maxRotation,
+            maxHeight=cfg.maxHeight,
+        )
 
-    augmentation = DataAugmentation(config=aug_config)
-
-    ground_truth = np.load(args.gnd_truth)
-    points_, ground_truth_ = augmentation.getAugmentedData(points.reshape((1,)+points.shape), ground_truth.reshape((1,)+ground_truth.shape))
-    points = points_[0]
-    ground_truth = ground_truth_[0]
+        augmentation = DataAugmentation(config=aug_config)
+        
+        points_, ground_truth_ = augmentation.getAugmentedData(points.reshape((1,)+points.shape), ground_truth.reshape((1,)+ground_truth.shape))
+        points = points_[0]
+        ground_truth = ground_truth_[0]
 
     pred_gnd = InferGround(points)
     pred_gnd = pred_gnd.cpu().numpy()
@@ -191,9 +200,7 @@ def main():
     else:
         raise Exception('please specify checkpoint to load')
 
-    for i in range(20):
-        predict_ground(args.pcl)
-        time.sleep(2)
+    predict_ground(args.pcl)
 
 
 if __name__ == '__main__':
