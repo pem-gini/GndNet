@@ -11,8 +11,8 @@ sys.path.append("..") # Adds higher directory to python modules path.
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torchplus.nn import Empty
-from torchplus.tools import change_default_args
+from ..torchplus.nn import Empty
+from ..torchplus.tools import change_default_args
 # import ipdb as pdb
 
 

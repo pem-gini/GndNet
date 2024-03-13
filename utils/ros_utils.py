@@ -31,7 +31,7 @@ import std_msgs.msg
 from visualization_msgs.msg import Marker,MarkerArray
 from geometry_msgs.msg import Point
 
-import ros2_numpy.ros2_numpy as ros2_numpy
+import ros2_numpy as ros2_numpy
 import shapely.geometry
 from scipy.spatial import Delaunay
 
@@ -39,13 +39,13 @@ import numba
 from numba import jit,types
 
 
-def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red"):
+def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red", frame_id = 'map'):
     length = int(cfg.grid_range[2] - cfg.grid_range[0]) # x direction
     width = int(cfg.grid_range[3] - cfg.grid_range[1])    # y direction
     print(type(ros_node.get_clock().now()))
 
     gnd_marker = Marker()
-    gnd_marker.header.frame_id = "map"
+    gnd_marker.header.frame_id = frame_id
     gnd_marker.header.stamp = ros_node.get_clock().now().to_msg()
     gnd_marker.type = gnd_marker.LINE_LIST
     gnd_marker.action = gnd_marker.ADD
@@ -157,7 +157,7 @@ def rgb_to_float(color):
     return float_rgb
 
 
-def np2ros_pub_2(ros_node, points, pcl_pub, timestamp, color):
+def np2ros_pub_2(ros_node, points, pcl_pub, timestamp, color, frame_id = "map"):
     npoints = points.shape[0] # Num of points in PointCloud
     points_arr = np.zeros((npoints,), dtype=[
                                         ('x', np.float32),
@@ -176,7 +176,22 @@ def np2ros_pub_2(ros_node, points, pcl_pub, timestamp, color):
 
     if timestamp == None:
         timestamp = ros_node.get_clock().now().to_msg()
-    cloud_msg = ros2_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id = "map")
+    cloud_msg = ros2_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id=frame_id)
     # rospy.loginfo("happily publishing sample pointcloud.. !")
     pcl_pub.publish(cloud_msg)
 
+def np2ros_pub_2_no_intesity(ros_node, points, pcl_pub, frame_id = "map"):
+    npoints = points.shape[0] # Num of points in PointCloud
+    points_arr = np.zeros((npoints,), dtype=[
+                                        ('x', np.float32),
+                                        ('y', np.float32),
+                                        ('z', np.float32)])
+    points = np.transpose(points)
+    points_arr['x'] = points[0]
+    points_arr['y'] = points[1]
+    points_arr['z'] = points[2]
+
+    timestamp = ros_node.get_clock().now().to_msg()
+    cloud_msg = ros2_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id=frame_id)
+    # rospy.loginfo("happily publishing sample pointcloud.. !")
+    pcl_pub.publish(cloud_msg)

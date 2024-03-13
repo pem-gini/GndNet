@@ -28,6 +28,7 @@ scipy
 ipdb
 argparse
 numba
+ros2_numpy (if using ros)
 ```
 ### Visualization
 For visualisation of the ground estimation, semantic segmentation of pointcloud, and easy integration with our real system we use Robot Operating System (ROS):

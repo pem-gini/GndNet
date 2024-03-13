@@ -28,7 +28,7 @@ from scipy.spatial import Delaunay
 
 import numba
 from numba import jit,types
-import ros2_numpy.ros2_numpy as ros2_numpy
+import ros2_numpy as ros2_numpy
 
 
 def visualize_gnd_3D(gnd_label , fig, cfg):
@@ -129,23 +129,26 @@ def crop_cloud_msg(cloud_msg, cfg, shift_cloud = False, sample_cloud = True):
 
 #################################################################################################
 
-@jit(nopython=True)
+# @jit(nopython=True)
+# def shift_cloud_func(cloud, height):
+#     cloud += np.array([0,0,height,0], dtype=np.float32) # Not all data is 4 dimensions (just the LIDAR)!
+#     return cloud
+# This version (no jit + cloud[:,2]) seems to be about 20% faster:
 def shift_cloud_func(cloud, height):
-    cloud += np.array([0,0,height,0], dtype=np.float32)
+    cloud[:,2] += height
     return cloud
 
-def cloud_msg_to_numpy(cloud_msg, cfg, shift_cloud = False):
+def cloud_msg_to_numpy(cloud_msg, camera_height, shift_cloud = False):
     # Convert Ros pointcloud2 msg to numpy array
     pc = ros2_numpy.numpify(cloud_msg)
-    points=np.zeros((pc.shape[0],4))
+    points=np.zeros((pc.shape[0],3))
     points[:,0]=pc['x']
     points[:,1]=pc['y']
     points[:,2]=pc['z']
-    points[:,3]=pc['intensity']
     cloud = np.array(points, dtype=np.float32)
 
     if shift_cloud:
-        cloud  = shift_cloud_func(cloud, cfg.lidar_height)
+        cloud  = shift_cloud_func(cloud, camera_height)
     return cloud
 
 
