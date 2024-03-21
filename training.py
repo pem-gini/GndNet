@@ -5,6 +5,12 @@ Author: Anshul Paigwar
 email: p.anshul6@gmail.com
 """
 
+# If this is the main scripts, we need gnd_net within our path as a module
+# This is to make all imports compatible with both ros and ros free envrionments
+if __name__ == '__main__':
+    import sys
+    sys.path.insert(1, "..") # Put the parent right behind the current directory (puts it before all ROS packages)
+
 # import tracemalloc
 
 # tracemalloc.start()
@@ -25,10 +31,10 @@ import numpy as np
 # import cv2
 
 # from modules import gnd_est_Loss
-from model import GroundEstimatorNet
-from modules.loss_func import MaskedHuberLoss,SpatialSmoothLoss
-from dataset_utils.dataset_provider import get_train_loader, get_valid_loader, AugmentationConfig
-from utils.point_cloud_ops import points_to_voxel
+from gnd_net.model import GroundEstimatorNet
+from gnd_net.modules.loss_func import MaskedHuberLoss,SpatialSmoothLoss
+from gnd_net.dataset_utils.dataset_provider import get_train_loader, get_valid_loader, AugmentationConfig
+from gnd_net.utils.point_cloud_ops import points_to_voxel
 # # import ipdb as pdb
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
@@ -340,4 +346,3 @@ class AverageMeter(object):
 
 if __name__ == '__main__':
     main()
-    #tracemalloc.stop()

@@ -31,7 +31,7 @@ import std_msgs.msg
 from visualization_msgs.msg import Marker,MarkerArray
 from geometry_msgs.msg import Point
 
-import ros2_numpy as ros2_numpy
+import gnd_net.ros2_numpy.ros2_numpy as ros2_numpy
 import shapely.geometry
 from scipy.spatial import Delaunay
 

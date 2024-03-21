@@ -28,7 +28,7 @@ from scipy.spatial import Delaunay
 
 import numba
 from numba import jit,types
-import ros2_numpy as ros2_numpy
+import gnd_net.ros2_numpy.ros2_numpy as ros2_numpy
 
 
 def visualize_gnd_3D(gnd_label , fig, cfg):
@@ -141,10 +141,7 @@ def shift_cloud_func(cloud, height):
 def cloud_msg_to_numpy(cloud_msg, camera_height, shift_cloud = False):
     # Convert Ros pointcloud2 msg to numpy array
     pc = ros2_numpy.numpify(cloud_msg)
-    points=np.zeros((pc.shape[0],3))
-    points[:,0]=pc['x']
-    points[:,1]=pc['y']
-    points[:,2]=pc['z']
+    points=pc['xyz']
     cloud = np.array(points, dtype=np.float32)
 
     if shift_cloud:

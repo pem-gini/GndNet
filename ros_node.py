@@ -7,10 +7,10 @@ import torch.nn.functional as F
 import numpy as np
 
 # from modules import gnd_est_Loss
-from .model import GroundEstimatorNet
-from .utils.point_cloud_ops import points_to_voxel
-from .utils.utils import cloud_msg_to_numpy, segment_cloud
-from .utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_no_intesity
+from gnd_net.model import GroundEstimatorNet
+from gnd_net.utils.point_cloud_ops import points_to_voxel
+from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud
+from gnd_net.utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_no_intesity
 # import ipdb as pdb
 
 # Ros Includes
@@ -65,6 +65,7 @@ class GndNetNode(Node):
             "with_distance": self.get_parameter("with_distance").value,
         }
         self.cfg = SimpleNamespace(**self.cfg) # Make it compatible with the GndNet config format (support dot notation)
+        self.cfg.batch_size = 1 # Always set it to one
 
         # Read in all parameters
         self.debug: bool = self.get_parameter("debug").value
@@ -121,6 +122,7 @@ class GndNetNode(Node):
         return model.eval() # Switch to evaluation mode
 
     def callback(self, cloud_msg):
+        self.log('Got new frame')
         # start_time = time.time()
         # cloud = process_cloud(cloud_msg, cfg, shift_cloud = True, sample_cloud = False)
         cloud = cloud_msg_to_numpy(cloud_msg, self.cameraHeight, shift_cloud = self.shiftCloud)
@@ -128,6 +130,10 @@ class GndNetNode(Node):
         # np_conversion = time.time()
         # print("np_conversion_time: ", np_conversion- start_time)
 
+        # Drop all points with invalid values (e.g. nan)
+        cloud = cloud[~np.isnan(cloud).any(axis=1)]
+
+        self.log('Voxilize point cloud')
         voxels, coors, num_points = points_to_voxel(cloud, self.cfg.voxel_size, self.cfg.pc_range, self.cfg.max_points_voxel, True, self.cfg.max_voxels)
         if self.cudaEnabled:
             voxels = torch.from_numpy(voxels).float().cuda()
@@ -143,17 +149,20 @@ class GndNetNode(Node):
         # cloud_process = time.time()
         # print("cloud_process: ", cloud_process - np_conversion)
 
+        self.log('Run prediction')
         with torch.no_grad():
                 output = self.model(voxels, coors, num_points)
                 # model_time = time.time()
                 # print("model_time: ", model_time - cloud_process)
 
+        self.log('Segment cloud')
         pred_GndSeg = segment_cloud(cloud.copy(),np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.08)
         # seg_time = time.time()
         # print("seg_time: ", seg_time - model_time )
         # print("total_time: ", seg_time - np_conversion)
         # print()
         # pdb.set_trace()
+        self.log('Publish results')
         gnd_marker_pub(self, output.cpu().numpy(), self.pubGroundPlane, self.cfg, color = "red", frame_id=self.targetFrame)
         np2ros_pub_2(self, cloud, self.pubSegmentedPointcloud, None, pred_GndSeg, self.targetFrame)
         np2ros_pub_2_no_intesity(self, cloud, self.pubPclNoGround, self.targetFrame)

@@ -8,7 +8,7 @@ import tf2_ros as tf2
 from visualization_msgs.msg import Marker
 from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import Point, TransformStamped
-import ros2_numpy as ros2_numpy
+import gnd_net.ros2_numpy.ros2_numpy as ros2_numpy
 
 grid_size = [0,0,0,0]
 width = 0

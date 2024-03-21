@@ -5,6 +5,13 @@ Author: Anshul Paigwar
 email: p.anshul6@gmail.com
 """
 
+
+# If this is the main scripts, we need gnd_net within our path as a module
+# This is to make all imports compatible with both ros and ros free envrionments
+if __name__ == '__main__':
+    import sys
+    sys.path.insert(1, "..") # Put the parent right behind the current directory (puts it before all ROS packages)
+
 import argparse
 import os
 import shutil
@@ -20,10 +27,10 @@ import numpy as np
 
 
 # from modules import gnd_est_Loss
-from model import GroundEstimatorNet
-from dataset_utils.dataset_provider import DataAugmentation, AugmentationConfig
-from utils.utils import segment_cloud
-from utils.point_cloud_ops import points_to_voxel
+from gnd_net.model import GroundEstimatorNet
+from gnd_net.dataset_utils.dataset_provider import DataAugmentation, AugmentationConfig
+from gnd_net.utils.utils import segment_cloud
+from gnd_net.utils.point_cloud_ops import points_to_voxel
 
 from numba import jit
 
