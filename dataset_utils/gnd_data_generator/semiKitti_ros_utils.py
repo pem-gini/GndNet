@@ -162,33 +162,44 @@ class KittiSemanticDataGeneratorNode(rclpy.node.Node):
 
         self.data_generator = data_generator
         data_generator.logger = self.get_logger()
+        data_generator.node = self
 
         self.pcl_pub = self.create_publisher(PointCloud2, "/kitti/velo/pointcloud", 10)
         self.pcl_pub2 = self.create_publisher(PointCloud2, "/kitti/raw/pointcloud", 10)
         self.marker_pub = self.create_publisher(Marker, "/kitti/ground_marker", 10)
 
-        self.timer = self.create_timer(0.1, self.kitti_semantic_data_generate)
+        self.timer = self.create_timer(4, self.kitti_semantic_data_generate)
+        #self.timer2 = self.create_timer(.1, self.preload)
 
         if fig != None:
             self.create_timer(2, fig.canvas.flush_events)
+    
+    def preload(self):
+        self.data_generator.load_future_frame()
+        if self.data_generator.doneLoading:
+            self.get_logger().info('Stop preload timer')
+            self.timer2.cancel()
 
     def kitti_semantic_data_generate(self):
-        hasNextFrame = self.data_generator.kitti_semantic_data_generate()
+        points, gnd_net, seg = self.data_generator.get_next_frame()
 
-        if not hasNextFrame:
+        if self.data_generator.complete:
             self.get_logger().info('Stop timer')
             self.timer.cancel()
         
         else:
-            timestamp = self.get_clock().now().to_msg()
-            #broadcast_TF(self,self.poses[current_frame],timestamp)
-            #np2ros_pub(cloud, self.pcl_pub, timestamp)
-            np2ros_pub_2(self.data_generator.points, self.pcl_pub2, timestamp, self.data_generator.seg.T)
-            
-            self.get_logger().info(f'{self.data_generator.gnd_label.shape}')
-            gnd_marker_pub(self.data_generator.gnd_label, self.marker_pub, timestamp)
+            self.show_step(points, seg, gnd_net)
             # print(points.shape)
             # pdb.set_trace()
+    
+    def show_step(self, points, seg, gnd_net):
+        timestamp = self.get_clock().now().to_msg()
+        #broadcast_TF(self,self.poses[current_frame],timestamp)
+        #np2ros_pub(cloud, self.pcl_pub, timestamp)
+        np2ros_pub_2(points, self.pcl_pub2, timestamp, seg.T)
+        
+        self.get_logger().info(f'{gnd_net.shape}')
+        gnd_marker_pub(gnd_net, self.marker_pub, timestamp)
 
 def ros_init(data_generator, fig, cfg):
     global grid_size, length, width

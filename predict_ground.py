@@ -199,6 +199,7 @@ def main():
                   .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+            exit(-1)
     else:
         raise Exception('please specify checkpoint to load')
 

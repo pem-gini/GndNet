@@ -129,7 +129,31 @@ For the gini we adapted the original GndNet slightly to meet all criteria and ha
 ### Data preperation (Custom Version)
 For the training of the network we use a new ground truth computation compared to the original version. This is mainly to get rid of the falsly classified objects close to the ground, that existed mainly because of too high tolerances. In the original version the ground was elevated about half a meter over the actual ground and also smoothing was too big for an accurate prediction on everything beneath 0.5 to 1 m.
 
-The new algorithm uses: TODO...
+#### Definition of Ground
+First we use the SemanticKitti labels to determine which pixels are ground and which aren't. For now we consider ground to be all points marked as:
+
+`'road', 'parking', 'sidewalk', 'other-ground', 'lane-marking', 'terrain'`, which corresponds to the labels `[40, 44, 48, 49,60,72]`.
+
+A complete list of all labels can be found [here](https://github.com/PRBonn/semantic-kitti-api/blob/master/config/semantic-kitti.yaml)
+
+#### Loading to SemanticKitti data
+The raw data consists out of the point clouds `.bin` and the label `.label` files. The point cloud is a raw binary file with each point being four 32-bit floating points `[x,y,z,r]` with r being the reflectivness of the lidar scan. For the GndNet that value will be discarded, because it won't be available when using camera data.
+
+The `.lable` is a 32-bit integer for each point of the point cloud. It has an identifier for the use of timeseries (we won't be needing this) and more importantly the lower 16-bit represent the label numer as describes [here](#definition-of-ground).
+
+#### Augmentation
+Before computing the ground plane, we are augmenting the data first. In the very first step a height variation (+/- 0.5m) is applied and a we are rotating the view direction. Additionally the whole map is slidly tilded to a random amount (+/- 5°) to simulate elevation which the original data is lacking. 
+
+Once that part is done, a block of 10x10m² in the newly defined front is cut out and a field of view from a camera point of view is computed within that area. This is as close as it gets to the camera data we will be working on later on.
+
+There is a script to demonstrate  the effect of the augmentation on a given point cloud and label file: 
+
+```sh
+python3 augmentation_demo.py --label=data/label.label --pcl=data/pcl.bin
+```
+
+#### Computation of the Ground Plane
+TODO
 
 # Training Algorithm
 While the model itself was untouched so far, the training algorithm changed slightly the in sense of data loading. We added a ring buffer to dynamically load big datasets on the go without the requirement to have everything in memory at once. This significantly reduced hardware requirements while reducing performance only about 1%. 
