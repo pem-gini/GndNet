@@ -1,10 +1,7 @@
 import numpy as np
 
 from scipy.spatial import Delaunay
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from numba import njit, prange
-import time
 
 # @jit(nopython=True)
 def in_hull(p, hull):
