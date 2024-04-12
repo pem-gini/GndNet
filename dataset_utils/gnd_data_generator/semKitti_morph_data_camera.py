@@ -99,7 +99,7 @@ def process_cloud(cloud, logger=logging.root):
     global visualize, grid_size, voxel_size, lidar_height, show_ros_intermediate_steps
 
     grid_size_np = np.asarray(grid_size)
-    gnd_img = gnd_utils.lidar_to_img(np.copy(gnd), grid_size_np, voxel_size, fill = 1, lidar_height=lidar_height)
+    #gnd_img = gnd_utils.lidar_to_img(np.copy(gnd), grid_size_np, voxel_size, fill = 1, lidar_height=lidar_height)
     gnd_heightmap, heightmap, num_points = gnd_utils.lidar_to_heightmap(np.copy(gnd), grid_size_np, voxel_size, max_points = 100, lidar_height=lidar_height)
 
     filled_voxels = num_points!=0
@@ -130,23 +130,33 @@ def process_cloud(cloud, logger=logging.root):
 
         # Make sure there are no outliers
         average_ground = signal.convolve2d(image_result, np.ones((5,5))/25, mode='same' , boundary='symm') # Average in 5x5 squares = 1m²
-        diff_to_average = image_result - average_ground # Should be max less than 0.1m <= 10% of elevation
+        diff_to_average = np.abs(image_result - average_ground) # Should be max less than 0.1m <= 10% of elevation
         outliers = diff_to_average > 0.1
+        
+        # gradient = np.zeros(image_result.shape)
+        # gradient[:-1,:-1] = np.maximum((image_result[:-1,:] - image_result[1:,:])[:,:-1], (image_result[:,:-1] - image_result[:,1:])[:-1,:])
+        # gradient[:,-1] = gradient[:,-2]
+        # gradient[-1,:] = gradient[-2,:]
+        # gradient[-1,-1] = gradient[-2,-2]
+        # outliers = gradient > 0.1
 
         if visualize:
-            # if i > 0:
-            #     time.sleep(4)
+            if i > 0 and show_ros_intermediate_steps:
+                 time.sleep(10)
 
             fig.clear()
 
             fig.add_subplot(2, 3, 1)
-            plt.imshow(gnd_img, interpolation='nearest')
+            cs = plt.imshow(filled_voxels, interpolation='nearest')
+            fig.colorbar(cs)
 
             fig.add_subplot(2, 3, 2)
-            plt.imshow(diff_to_average, interpolation='nearest')
+            cs = plt.imshow(diff_to_average, interpolation='nearest')
+            fig.colorbar(cs)
 
             fig.add_subplot(2, 3, 3)
-            plt.imshow(outliers, interpolation='nearest')
+            cs = plt.imshow(outliers, interpolation='nearest')
+            fig.colorbar(cs)
 
             # fig.add_subplot(2, 3, 2)
             # plt.imshow(gnd_img_dil, interpolation='nearest')
@@ -186,7 +196,7 @@ def process_cloud(cloud, logger=logging.root):
         # This is definitely not a nice way to handle this, but it works for debugging purposes
         if show_ros_intermediate_steps and data_generator_ref != None:
             cloud2 = cloud.copy()
-            seg = gnd_utils.semantically_segment_cloud(cloud2, grid_size_np, voxel_size, image_result, lidar_height)
+            seg = gnd_utils.semantically_segment_cloud(cloud2.copy(), grid_size_np, voxel_size, image_result, lidar_height)
             cloud2[:,2] += lidar_height
             data_generator_ref.node.show_step(cloud2, seg, image_result.T)
 
@@ -370,6 +380,13 @@ def main(logger: logging.Logger, data_dir: str, step=1):
     frames_per_block = cfg.frames_per_block * step
 
     data_blocks: list[tuple[str]] = []
+
+    # Do not create process pool when using ros
+    if use_ros:
+        for sequence in sequences:
+            frames_cnt = len(os.listdir(os.path.join(data_dir, sequence, "velodyne/")))
+            compute_extract(logger, data_dir, sequence, 0, frames_cnt-1, 0, step)
+        return
 
     for sequence in sequences:
         frames_cnt = len(os.listdir(os.path.join(data_dir, sequence, "velodyne/")))
