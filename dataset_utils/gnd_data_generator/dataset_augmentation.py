@@ -24,6 +24,8 @@ class AugmentationConfig():
 		self.maxRotation = maxRotation
 		self.maxHeight = maxHeight
 
+		self.num_augmentations = num_rotations + num_height_var + keep_original
+
 class DataAugmentation():
 	def __init__(self, config: AugmentationConfig) -> None:
 		"""keep_original=True will temporarly make a copy of the entire dataset. Make sure you have enough memory!"""

@@ -340,12 +340,12 @@ def compute_extract(logger: logging.Logger, data_dir: str, sequence=0, first_fra
         os.makedirs(os.path.join(sequence_dir_out,"reduced_velo/"), exist_ok=True)
         os.makedirs(os.path.join(sequence_dir_out,"gnd_labels/"), exist_ok=True)
 
+        start = time.time()
         data_generator = KittiSemanticDataGenerator(sequence_dir, first_frame, last_frame, step, logger=logger.getChild(f'seq{sequence}-{block_id}'))
-        count = math.ceil(first_frame / step)
+        count = math.ceil(first_frame / step) * data_generator.augmentationConfig.num_augmentations
         while not data_generator.complete:
             points, gnd_net, seg = data_generator.get_next_frame()
-            if count == 1:
-                start = time.time()
+                
             if data_generator.complete:
                 break
 
@@ -425,10 +425,9 @@ def main(logger: logging.Logger, data_dir: str, step=1):
             if not status:
                 failed += 1
 
-            if completed > 1:
-                avg_time = (time.time()-start)/(completed-1)
-                time_left = avg_time * (num_blocks - completed)
-                logger.info(f'Status: {completed/num_blocks:.0%} ({completed}/{num_blocks}): {time_left/60:.2f}min remaining ({total_time/completed:.2f}s per block)')
+            avg_time = (time.time()-start)/completed
+            time_left = avg_time * (num_blocks - completed)
+            logger.info(f'Status: {completed/num_blocks:.0%} ({completed}/{num_blocks}): {time_left/60:.2f}min remaining ({total_time/completed:.2f}s per block)')
 
 if __name__ == '__main__':
     main(logger_main, data_dir, step=cfg.frame_step)
