@@ -38,3 +38,10 @@ maxFrontSlope: 5
 maxSideTild: 5
 maxRotation: 180
 maxHeight: .5
+
+# data prepartaion config
+frame_step: 4
+frames_per_block: 50
+num_workers: 10
+data_dir: '/work/yw410445/dataset/sequences/'
+out_dir: '/hpcwork/yw410445/training_data/sequences/'

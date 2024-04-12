@@ -81,8 +81,8 @@ logger_main.debug(type(grid_size))
 logger_main.debug(voxel_size)
 logger_main.debug(type(voxel_size))
 
-data_dir = '/home/finn/pem/duckbrain_umbrella/ros2_ws/src/gnd_net/gnd_net/data/training/sequences' #/work/yw410445/dataset/sequences/'
-out_dir = '/home/finn/pem/duckbrain_umbrella/ros2_ws/src/gnd_net/gnd_net/data/training/sequences_reduced' #'/work/yw410445/training_data/sequences/'
+data_dir = cfg.data_dir
+out_dir = cfg.out_dir
 
 if visualize:
     fig = plt.figure()
@@ -363,11 +363,11 @@ def compute_extract(logger: logging.Logger, data_dir: str, sequence=0, first_fra
     return (True, duration)
 
 def main(logger: logging.Logger, data_dir: str, step=1):
-    global out_dir
-    sequences = sorted(os.listdir(data_dir))
-    num_workers = 2
+    global out_dir, cfg
+    sequences = sorted(os.listdir(data_dir))[:11]
+    num_workers = cfg.num_workers
 
-    frames_per_block = 5 * step
+    frames_per_block = cfg.frames_per_block * step
 
     data_blocks: list[tuple[str]] = []
 
@@ -390,35 +390,31 @@ def main(logger: logging.Logger, data_dir: str, step=1):
     logger.info(f'Created {len(data_blocks)} blocks for {len(sequences)} sequence')
 
     num_blocks = len(data_blocks)
-    time_total = 0
-    mov_avg_time = 0
+    total_time = 0
     completed = 0 # Including failures
     failed = 0
     with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
         futures = [executor.submit(compute_extract, logger, data_dir, block[0], block[1], block[2], i, step) for i, block in enumerate(data_blocks)]
 
+        start = time.time()
         for future in concurrent.futures.as_completed(futures):
             status, duration = future.result()
 
-            time_total += duration
             if completed == 0:
-                mov_avg_time = duration
-            else:
-                mov_avg_time = 0.9 * mov_avg_time + 0.1 * duration # Moving average
+                start = time.time() # Ignore the first finished package, it takes way longer because of compilation times
 
+            total_time += duration
             completed += 1
             if not status:
                 failed += 1
 
-            avg_time = time_total/completed
-            time_to_complete1 = avg_time * (num_blocks - completed)
-            time_to_complete2 = mov_avg_time * (num_blocks - completed)
-            shorter = (time_to_complete1, 'avg') if time_to_complete1 < time_to_complete2 else (time_to_complete2, 'mov')
-            longer = (time_to_complete2, 'mov') if time_to_complete1 < time_to_complete2 else (time_to_complete1, 'avg')
-            logger.info(f'Status: {completed/num_blocks:.0%} ({completed}/{num_blocks}): {shorter[0]/60:.2f}min to {longer[0]/60:.2f}min ({shorter[1]}/{longer[1]})')
+            if completed > 1:
+                avg_time = (time.time()-start)/(completed-1)
+                time_left = avg_time * (num_blocks - completed)
+                logger.info(f'Status: {completed/num_blocks:.0%} ({completed}/{num_blocks}): {time_left/60:.2f}min remaining ({total_time/completed:.2f}s per block)')
 
 if __name__ == '__main__':
-    main(logger_main, data_dir, step=1)
+    main(logger_main, data_dir, step=cfg.frame_step)
 
 
 # # @jit(nopython=True)
