@@ -8,6 +8,7 @@ sys.path.insert(1, '../../..')
 
 from queue import Queue
 import math
+import concurrent.futures
 import multiprocessing
 import time
 import os
@@ -89,7 +90,7 @@ else:
     fig = None
 
 
-def process_cloud(cloud):
+def process_cloud(cloud, logger=logging.root):
     # start = time.time()
     # remove all non ground points; gnd labels = [40, 44, 48, 49]
     # gnd, obs = segment_cloud(cloud,[40, 44, 48, 49])
@@ -195,7 +196,7 @@ def process_cloud(cloud):
         
         # Otherwise, remove the outliers in the original data and run the interpolation again
         filled_voxels[outliers] = False # Simply mark the squares of the outliers as free
-        print(f'Remove outliers, rerun ({i})')
+        logger.info(f'Remove outliers, rerun ({i})')
 
     # kernel = np.ones((5,5),np.uint8)
     # gnd_img_dil = cv2.dilate(gnd_img,kernel,iterations = 2)
@@ -211,13 +212,14 @@ def process_cloud(cloud):
 
 class KittiSemanticDataGenerator():
 
-    def __init__(self, data_dir, logger=None) -> None:
+    def __init__(self, data_dir, first_frame=0, last_frame=1e6, step=1, logger=None) -> None:
 
         self.data_dir = data_dir
+        self.step = step
+        self.last_frame = last_frame
         self.velodyne_dir = os.path.join(self.data_dir, "velodyne/")
         self.label_dir = os.path.join(self.data_dir, 'labels/')
 
-        self.frames_cnt = len(os.listdir(self.velodyne_dir))
         self.calibration = gnd_utils.parse_calibration(os.path.join(self.data_dir, "calib.txt"))
         self.poses = gnd_utils.parse_poses(os.path.join(self.data_dir, "poses.txt"), self.calibration)
 
@@ -225,7 +227,7 @@ class KittiSemanticDataGenerator():
 
         self.angle = 0
         self.increase = True
-        self.current_frame = 0
+        self.current_frame = first_frame
 
         self.cloud = None
         self.points = None
@@ -267,8 +269,8 @@ class KittiSemanticDataGenerator():
         current_frame = self.current_frame
 
         # Increase the frame cnt and cancle timer if we reached the end
-        self.current_frame += 1
-        if self.current_frame > self.frames_cnt:
+        self.current_frame += self.step
+        if self.current_frame > self.last_frame:
             self.doneLoading = True
             return False
 
@@ -284,16 +286,14 @@ class KittiSemanticDataGenerator():
         points = np.concatenate((points,label), axis = 1)
 
         # Makes all neccessary augmentations, and will return the frame as multiple differently augmented frames
-        print(points.shape)
         augmentations = self.augmentation.getAugmentedData(points.reshape((1,)+points.shape))
-        print(augmentations.shape)
         num_augmentations = augmentations.shape[0]
         for i in range(num_augmentations):
 
             if self.logger != None:
                 self.logger.info(f'Frame {current_frame} with augmentation {i+1}/{num_augmentations}')
 
-            ground_cloud, gnd_label, seg = process_cloud(augmentations[i])
+            ground_cloud, gnd_label, seg = process_cloud(augmentations[i], logger=self.logger)
             # cloud = process_cloud(points)
 
             # points += np.array([0,0,lidar_height,0,0], dtype=np.float32)
@@ -308,83 +308,117 @@ class KittiSemanticDataGenerator():
 
         return True
 
+def compute_extract(logger: logging.Logger, data_dir: str, sequence=0, first_frame=0, last_frame=0, block_id=0, step=1):
+    logger.info(f'Start to compute block {block_id}: {sequence}: {first_frame}-{last_frame}')
+    start = time.time()
 
-def main(logger: logging.Logger, data_dir: str, sequence_start=0, sequence_end=100, max_frames=None):
-    global out_dir
-    sequences = sorted(os.listdir(data_dir))
+    sequence_dir = os.path.join(data_dir, sequence)
+    sequence_dir_out = os.path.join(out_dir, sequence)
+    if not os.path.isdir(sequence_dir):
+        logger.error(f'Sequence directory does not exist: {sequence_dir}')
+        logger.info(f'Failed to compute block {block_id}')
+        return (False, time.time()-start)
 
-    framesCnt = 0
-    sequenceCnt = 0
+    # When using ROS, the data will be parsed in a periodic interval and published for other nodes to process and visualize
+    if use_ros:
+        global fig, data_generator_ref
+        data_generator_ref = KittiSemanticDataGenerator(data_dir=sequence_dir)
+        ros_init(data_generator=data_generator_ref, fig=fig, cfg=cfg)
+    
+    # Otherwise the data will be processed in a loop and saved to file
+    else:
+        os.makedirs(os.path.join(sequence_dir_out,"reduced_velo/"), exist_ok=True)
+        os.makedirs(os.path.join(sequence_dir_out,"gnd_labels/"), exist_ok=True)
 
-    for sequence in sequences:
-        # Only compute sequences within the given range
-        if not (sequence_start <= int(sequence) <= sequence_end):
-            continue
+        data_generator = KittiSemanticDataGenerator(sequence_dir, first_frame, last_frame, step, logger=logger.getChild(f'seq{sequence}-{block_id}'))
+        count = math.ceil(first_frame / step)
+        while not data_generator.complete:
+            points, gnd_net, seg = data_generator.get_next_frame()
+            if count == 1:
+                start = time.time()
+            if data_generator.complete:
+                break
 
-        sequence_dir = os.path.join(data_dir, sequence)
-        sequence_dir_out = os.path.join(out_dir, sequence)
-        if not os.path.isdir(sequence_dir):
-            continue
+            cloud = gnd_utils.extract_pc_in_box2d(points, pc_range)
 
-        # When using ROS, the data will be parsed in a periodic interval and published for other nodes to process and visualize
-        if use_ros:
-            global fig, data_generator_ref
-            data_generator_ref = KittiSemanticDataGenerator(data_dir=sequence_dir)
-            ros_init(data_generator=data_generator_ref, fig=fig, cfg=cfg)
-        
-        # Otherwise the data will be processed in a loop and saved to file
-        else:
-            os.makedirs(os.path.join(sequence_dir_out,"reduced_velo/"), exist_ok=True)
-            os.makedirs(os.path.join(sequence_dir_out,"gnd_labels/"), exist_ok=True)
+            # random sample point cloud to specified number of points
+            cloud = gnd_utils.random_sample_numpy(cloud, N = cfg.num_points)
 
-            data_generator = KittiSemanticDataGenerator(data_dir=sequence_dir, logger=logger.getChild(f'seq{sequence}'))
-            count = 0
-            while not data_generator.complete:
-                points, gnd_net, seg = data_generator.get_next_frame()
-                if count == 1:
-                    start = time.time()
-                if data_generator.complete:
-                    break
+            # Save data to file
+            velo_path = os.path.join(sequence_dir_out, "reduced_velo/", "%06d" % count)
+            label_path = os.path.join(sequence_dir_out, "gnd_labels/", "%06d" % count)
 
-                cloud = gnd_utils.extract_pc_in_box2d(points, pc_range)
-
-                # random sample point cloud to specified number of points
-                cloud = gnd_utils.random_sample_numpy(cloud, N = cfg.num_points)
-
-                # Save data to file
-                velo_path = os.path.join(sequence_dir_out, "reduced_velo/", "%06d" % count)
-                label_path = os.path.join(sequence_dir_out, "gnd_labels/", "%06d" % count)
+            try:
                 np.save(velo_path, cloud)
                 np.save(label_path, gnd_net)
+            except Exception as e:
+                logger.error(e)
+                logger.info(f'Failed to compute block {block_id}')
+                return (False, time.time()-start)
 
-                count += 1
+            count += 1
+    
+    duration = time.time()-start
+    logger.info(f'Completed next block: {block_id} ({duration}s)')
+    return (True, duration)
 
-                # For debugging purposes it can help to limit the number of frames
-                framesCnt += 1
-                if max_frames != None and framesCnt >= max_frames:
-                    logger.debug(time.time()-start)
-                    return
+def main(logger: logging.Logger, data_dir: str, step=1):
+    global out_dir
+    sequences = sorted(os.listdir(data_dir))
+    num_workers = 2
+
+    frames_per_block = 5 * step
+
+    data_blocks: list[tuple[str]] = []
+
+    for sequence in sequences:
+        frames_cnt = len(os.listdir(os.path.join(data_dir, sequence, "velodyne/")))
+        cnt = 0
+        num_blocks = 0
+        while cnt < frames_cnt-1:
+            is_last = (cnt + 1.5 * frames_per_block) >= frames_cnt
+            num_blocks += 1
+            if is_last:
+                data_blocks.append((sequence, cnt, frames_cnt-1))
+                cnt = frames_cnt-1
+                break
+            else:
+                data_blocks.append((sequence, cnt, cnt+frames_per_block-1))
+                cnt = cnt+frames_per_block
+        
+        logger.info(f'Split sequence {sequence} into {num_blocks} blocks')
+    logger.info(f'Created {len(data_blocks)} blocks for {len(sequences)} sequence')
+
+    num_blocks = len(data_blocks)
+    time_total = 0
+    mov_avg_time = 0
+    completed = 0 # Including failures
+    failed = 0
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(compute_extract, logger, data_dir, block[0], block[1], block[2], i, step) for i, block in enumerate(data_blocks)]
+
+        for future in concurrent.futures.as_completed(futures):
+            status, duration = future.result()
+
+            time_total += duration
+            if completed == 0:
+                mov_avg_time = duration
+            else:
+                mov_avg_time = 0.9 * mov_avg_time + 0.1 * duration # Moving average
+
+            completed += 1
+            if not status:
+                failed += 1
+
+            avg_time = time_total/completed
+            time_to_complete1 = avg_time * (num_blocks - completed)
+            time_to_complete2 = mov_avg_time * (num_blocks - completed)
+            shorter = (time_to_complete1, 'avg') if time_to_complete1 < time_to_complete2 else (time_to_complete2, 'mov')
+            longer = (time_to_complete2, 'mov') if time_to_complete1 < time_to_complete2 else (time_to_complete1, 'avg')
+            logger.info(f'Status: {completed/num_blocks:.0%} ({completed}/{num_blocks}): {shorter[0]/60:.2f}min to {longer[0]/60:.2f}min ({shorter[1]}/{longer[1]})')
 
 if __name__ == '__main__':
-    processes = []
-    numCores = 1
-    numSequences = 1
-
-    lowerBound = 0
-    seqPerProcess = math.ceil(numSequences / numCores)
-    for i in range(numCores):
-        end = min(numSequences, lowerBound+seqPerProcess)
-        logger_thread = logger_main.getChild(f'process{i}')
-        p = multiprocessing.Process(target=main, args=(logger_thread, data_dir, lowerBound, end-1, None))
-        processes.append(p)
-
-        logger_main.info(f'Start process {i} of {numCores}: {lowerBound}-{end}')
-        p.start()
-
-        lowerBound = end
-
-    for process in processes:
-        process.join()
+    main(logger_main, data_dir, step=1)
 
 
 # # @jit(nopython=True)
