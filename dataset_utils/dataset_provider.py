@@ -17,90 +17,10 @@ import os
 import collections
 import logging
 import random
+
 # import ipdb as pdb
 
 Msg = collections.namedtuple('Msg', ['event', 'args'])
-
-class AugmentationConfig():
-	def __init__(self, grid, 
-			  keep_original=False, 
-			  num_rotations = 0, 
-			  num_height_var = 0,
-			  maxFrontSlope = 5, 
-			  maxSideTild = 0, 
-			  maxRotation = 0, 
-			  maxHeight = 0) -> None:
-		
-		self.grid = grid
-		self.keep_original = keep_original
-		self.num_rotations = num_rotations
-		self.num_height_var = num_height_var
-		self.maxFrontSlope = maxFrontSlope
-		self.maxSideTild = maxSideTild
-		self.maxRotation = maxRotation
-		self.maxHeight = maxHeight
-
-class DataAugmentation():
-	def __init__(self, config: AugmentationConfig) -> None:
-		"""keep_original=True will temporarly make a copy of the entire dataset. Make sure you have enough memory!"""
-
-		self.config = config
-
-
-	def getAugmentedData(self, velodyne_data, ground_labels):
-		data, labels = (velodyne_data, ground_labels) if not self.config.keep_original else (np.copy(velodyne_data), np.copy(ground_labels))
-		if self.config.num_rotations > 0:
-			# Duplicate the frames if necessary
-			if self.config.num_rotations > 1:
-				data = np.repeat(data, self.config.num_rotations, axis=0)
-				labels = np.repeat(labels, self.config.num_rotations, axis=0)
-			self.augmentRotation(data, labels, self.config.grid, self.config.maxFrontSlope, self.config.maxSideTild, self.config.maxRotation)
-
-		if self.config.num_height_var > 0:
-			# Duplicate the frames if necessary
-			if self.config.num_height_var > 1:
-				data = np.repeat(data, self.config.num_height_var, axis=0)
-				labels = np.repeat(labels, self.config.num_height_var, axis=0)
-			self.augmentHeight(data, labels, self.config.maxHeight)
-		
-		if self.config.keep_original:
-			data = np.concatenate((velodyne_data, data))
-			labels = np.concatenate((ground_labels, labels))
-		
-		return (data, labels)
-
-	def augmentRotation(self, data: 'np.ndarray', labels: 'np.ndarray', grid: list[int], maxFrontSlope = 5, maxSideTild = 0, maxRotation = 0):
-		# Define max positive rotation
-		theta = np.asarray([maxRotation, maxSideTild, maxFrontSlope])
-
-		# Get all random rotations for every frame
-		rotations = theta * (2 * np.random.rand(data.shape[0], 3) - 1)
-
-		# Convert the euler angles to rotation matrices
-		r = R.from_euler('zyx', rotations, degrees=True).as_matrix()
-
-		# Get conversion from grid to coordinates
-		grid = np.asarray(grid)
-		shape = np.asarray(labels[0].shape)
-		offset = grid[0:2]
-		scale = (grid[2:4] - grid[0:2]) / shape
-		indices = np.indices(labels[0].shape).T.reshape(-1, 2) # Assume all label shapes are the same (wich sould always be the case)
-		labels_coordinates = indices * scale + offset # These are the coordinates for each grid component of the labels
-
-		# Rotate all points within each frame
-		for i in range(data.shape[0]):
-			# Rotate all points
-			data[i,:,:3] = np.dot(data[i,:,:3], r[i].T)
-
-			# Rotate ground plane
-			grid_as_list = np.concatenate((labels_coordinates, labels[i].reshape((1,-1)).T), axis=1) # [x, y, gnd_height]
-			grid_transformed = np.dot(grid_as_list, r[i].T) # Transform the ground plane with the rotation matrix
-			labels[i] = grid_transformed[:,2].reshape(labels[i].shape) # Convert back into a grid
-	
-	def augmentHeight(self, data: 'np.ndarray', labels: 'np.ndarray', maxHeight = 5):
-		random_height = maxHeight * (2 * np.random.rand(data.shape[0]) - 1)
-		data[:,:,2] += random_height[:,np.newaxis] # Each frame gets its random height variation added
-		labels[:] += random_height[:,np.newaxis, np.newaxis] # For each frame the entire ground map gets the height variation added
 
 class AsyncDataLoader(multiprocessing.Process):
 	def __init__(self, data_dir: str, dir_name: str, max_memory=4e6, num_input_features = 3, skip_frames = 1, parent_logger=logging.root, *args, **kwargs):
@@ -292,10 +212,10 @@ class kitti_gnd_sync(Dataset):
 		
 		self.logger.info(f'Loaded {self.current_memory_data} Bytes of data + {self.current_memory_labels} Bytes of labels (={self.current_memory_data+self.current_memory_labels} Bytes)')
 
-		self.logger.info('Start data augmentation')
-		self.augmentation = DataAugmentation(config=augmentation_config)
-		self.loaded_data, self.loaded_labels = self.augmentation.getAugmentedData(self.loaded_data, self.loaded_labels)
-		self.logger.info(f'Loaded {self.loaded_data.nbytes} Bytes of data + {self.loaded_labels.nbytes} Bytes of labels (={self.loaded_data.nbytes+self.loaded_labels.nbytes} Bytes)')
+		# self.logger.info('Start data augmentation')
+		# self.augmentation = DataAugmentation(config=augmentation_config)
+		# self.loaded_data, self.loaded_labels = self.augmentation.getAugmentedData(self.loaded_data, self.loaded_labels)
+		# self.logger.info(f'Loaded {self.loaded_data.nbytes} Bytes of data + {self.loaded_labels.nbytes} Bytes of labels (={self.loaded_data.nbytes+self.loaded_labels.nbytes} Bytes)')
 
 
 	def __getitem__(self, index):
