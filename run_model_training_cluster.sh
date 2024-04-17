@@ -15,4 +15,4 @@ source activate gndnet
 module load CUDA
 echo; export; echo; nvidia-smi; echo
 
-python3 main.py -s --config config/config_custom_cluster.yaml
+python3 training.py -s --config config/config_custom_cluster.yaml

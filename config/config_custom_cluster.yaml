@@ -1,4 +1,4 @@
-data_dir: '/work/yw410445/training_data'
+data_dir: '/work/yw410445/training_data_v2'
 shift_cloud: true
 lidar_height: 1.733
 num_points: 100000

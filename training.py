@@ -33,7 +33,7 @@ import numpy as np
 # from modules import gnd_est_Loss
 from gnd_net.model import GroundEstimatorNet
 from gnd_net.modules.loss_func import MaskedHuberLoss,SpatialSmoothLoss
-from gnd_net.dataset_utils.dataset_provider import get_train_loader, get_valid_loader, AugmentationConfig
+from gnd_net.dataset_utils.dataset_provider import get_train_loader, get_valid_loader
 from gnd_net.utils.point_cloud_ops import points_to_voxel
 # # import ipdb as pdb
 
@@ -85,19 +85,9 @@ else:
 
 #############################################xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx#######################################
 
-augmentation_config = AugmentationConfig(
-    grid=cfg.grid_range,
-    keep_original=cfg.keep_original,
-    num_rotations=cfg.num_rotations,
-    num_height_var=cfg.num_height_var,
-    maxFrontSlope=cfg.maxFrontSlope,
-    maxSideTild=cfg.maxSideTild,
-    maxRotation=cfg.maxRotation,
-    maxHeight=cfg.maxHeight,
-)
 
-train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 2, augmentation_config=augmentation_config, num_input_features=cfg.input_features, max_memory=4*1.074e9, parent_logger=logger_main)
-valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 3, augmentation_config=augmentation_config, num_input_features=cfg.input_features, max_memory=1.074e9, parent_logger=logger_main)
+train_loader =  get_train_loader(cfg.data_dir, cfg.batch_size, skip = 6, num_input_features=cfg.input_features, max_memory=15e9, parent_logger=logger_main)
+valid_loader =  get_valid_loader(cfg.data_dir, cfg.batch_size, skip = 3, num_input_features=cfg.input_features, max_memory=5e9, parent_logger=logger_main)
 
 attempts = 10
 attempt = 0

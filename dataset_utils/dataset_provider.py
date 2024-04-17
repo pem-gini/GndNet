@@ -4,6 +4,7 @@ import sys
 import math
 sys.path.append("..") # Adds higher directory to python modules path.
 
+from tqdm import tqdm
 import time
 import multiprocessing
 from multiprocessing import shared_memory
@@ -169,7 +170,7 @@ class kitti_gnd_async(Dataset):
 
 
 class kitti_gnd_sync(Dataset):
-	def __init__(self, data_dir, train = True, skip_frames = 1, num_input_features=3, max_memory=1e9, augmentation_config = None, logger: logging.Logger=logging.root):
+	def __init__(self, data_dir, train = True, skip_frames = 1, num_input_features=3, max_memory=1e9, logger: logging.Logger=logging.root):
 		self.train = train
 		self.logger = logger
 		self.max_memory = max_memory
@@ -186,9 +187,19 @@ class kitti_gnd_sync(Dataset):
 
 		self.logger.info(f'loading {self.dir_name} data')
 		seq_folders = os.listdir(self.data_path)
-		for seq_num in seq_folders:
+
+                # First count the files to show a progess
+                num_files = 0
+                files_list = []
+                for seq_num in seq_folders:                                                                                                                                                                                              seq_path = os.path.join(self.data_path, seq_num)                                                                                                                                                                 files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo')
+                        num_files += files_in_seq
+                        files_list.append(files_in_seq)
+                num_files = math.ceil(num_files / skip_frames)
+                pbar = tqdm(total=num_files)
+
+		for i, seq_num in enumerate(seq_folders):
 			seq_path = os.path.join(self.data_path, seq_num)
-			files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo'))
+			files_in_seq = files_list[i]
 
 			for data_num in range(0, len(files_in_seq),skip_frames): # too much of dataset we skipping files
 				file_name = files_in_seq[data_num]
@@ -206,6 +217,9 @@ class kitti_gnd_sync(Dataset):
 				self.loaded_labels.append(label)
 
 				self.current_memory_labels += label.nbytes
+                                pbar.update(1)
+
+                pbar.close()
 		
 		self.loaded_data = np.asarray(self.loaded_data)
 		self.loaded_labels = np.asarray(self.loaded_labels)
@@ -228,7 +242,7 @@ class kitti_gnd_sync(Dataset):
 
 
 
-def get_valid_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_memory=4e6, augmentation_config = None, parent_logger=logging.root):
+def get_valid_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_memory=4e6, parent_logger=logging.root):
 
 	parent_logger = parent_logger.getChild('dataset_provider.valid')
 
@@ -242,7 +256,7 @@ def get_valid_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_
 		pin_memory = True
 
 
-	valid_loader = DataLoader(kitti_gnd_sync(data_dir,train = False, augmentation_config= augmentation_config, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
+	valid_loader = DataLoader(kitti_gnd_sync(data_dir,train = False, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
 					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=True,drop_last=True)
 
 	parent_logger.info("Valid Data size %d",len(valid_loader)*batch)
@@ -253,7 +267,7 @@ def get_valid_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_
 
 
 
-def get_train_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_memory=4e6, augmentation_config = None, parent_logger=logging.root):
+def get_train_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_memory=4e6, parent_logger=logging.root):
 
 	parent_logger = parent_logger.getChild('dataset_provider.train')
 
@@ -266,7 +280,7 @@ def get_train_loader(data_dir, batch = 4, skip = 1, num_input_features = 3, max_
 		num_workers = 4
 		pin_memory = True
 
-	train_loader = DataLoader(kitti_gnd_sync(data_dir,train = True, augmentation_config=augmentation_config, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
+	train_loader = DataLoader(kitti_gnd_sync(data_dir,train = True, skip_frames = skip, num_input_features=num_input_features, max_memory=max_memory, logger=parent_logger),
 					batch_size= batch, num_workers=num_workers, pin_memory=pin_memory,shuffle=True,drop_last=True)
 
 	parent_logger.info("Train Data size %d",len(train_loader)*batch)
