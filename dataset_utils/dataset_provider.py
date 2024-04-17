@@ -220,9 +220,9 @@ class kitti_gnd_sync(Dataset):
 				self.loaded_labels.append(label)
 
 				self.current_memory_labels += label.nbytes
-                                pbar.update(1)
-
-                pbar.close()
+				pbar.update(1)
+				
+		pbar.close()
 		
 		self.loaded_data = np.asarray(self.loaded_data)
 		self.loaded_labels = np.asarray(self.loaded_labels)
