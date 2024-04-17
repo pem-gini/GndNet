@@ -191,9 +191,12 @@ class kitti_gnd_sync(Dataset):
 		# First count the files to show a progess
 		num_files = 0
 		files_list = []
-		for seq_num in seq_folders:                                                                                                                                                                                              seq_path = os.path.join(self.data_path, seq_num)                                                                                                                                                                 files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo')
+		for seq_num in seq_folders:
+			seq_path = os.path.join(self.data_path, seq_num)
+			files_in_seq = os.listdir(os.path.join(seq_path, 'reduced_velo'))
 			num_files += files_in_seq
 			files_list.append(files_in_seq)
+		
 		num_files = math.ceil(num_files / skip_frames)
 		pbar = tqdm(total=num_files)
 
