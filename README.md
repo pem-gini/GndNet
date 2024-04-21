@@ -1,14 +1,14 @@
 # GndNet: Fast Ground plane Estimation and Point Cloud Segmentation for Autonomous Vehicles.
-This is the original GndNet Readme. For all current informations see the part [below](#gndnet-gini-version).
+This is the Readme of our adjusted version of GndNet. All general information about the original project can be found [here](https://github.com/anshulpaigwar/GndNet).
 
-
-Authors: Anshul Paigwar, Ozgur Erkent, David Sierra Gonzalez, Christian Laugier
+Authors adjustments: Finn Gegenmantel    
+Authors original papers: Anshul Paigwar, Ozgur Erkent, David Sierra Gonzalez, Christian Laugier
 
 <img src="https://github.com/anshulpaigwar/GndNet/blob/master/doc/GndNet_Teaser.png" alt="drawing" width="400"/>
 
 ## Introduction
 
-This repository is code release for our GndNet paper accepted in International conference on Robotic Systems, IROS 2020. [Link](https://hal.inria.fr/hal-02927350/document)
+This repository is based on the code release for the GndNet paper accepted in International conference on Robotic Systems, IROS 2020. [Link](https://hal.inria.fr/hal-02927350/document)
 
 ## Abstract
 
@@ -17,9 +17,12 @@ Ground plane estimation and ground point seg-mentation is a crucial precursor fo
 
 ## Installation
 
-We have tested the algorithm on the system with Ubuntu 18.04, 12 GB RAM and NVIDIA GTX-1080.
-
 ### Dependencies
+`ros_numpy` is added as a submodule because of a persiting bug in the currently published version. Therefore you need to clone the submodules first:
+```
+git submodule update --init --recursive
+```
+
 ```
 Python 3.6
 CUDA (tested on 10.1)
@@ -30,142 +33,41 @@ argparse
 numba
 ros2_numpy (if using ros)
 ```
+
+All dependecies are also part of the `setup.sh` script. It can simply be run install all required packages, if you are not currently on the RWTH Cluster, comment out the first line to ignore the cluster setup script.
+
+It is recommended using an anaconda environment to avoid version conflicts, see the `setup_conda.sh` script for details.
+
 ### Visualization
-For visualisation of the ground estimation, semantic segmentation of pointcloud, and easy integration with our real system we use Robot Operating System (ROS):
+For visualisation of the ground estimation, semantic segmentation of pointcloud, and easy integration with our real system we use Robot Operating System 2 (ROS2):
 ```
 ROS
 ros_numpy
 ```
-## Data Preparation
 
-We train our model using the augmented [SematicKITTI](http://www.semantic-kitti.org/) dataset. A sample data is provided in this repository, while the full dataset can be downloaded from [link](https://archive.org/details/semantickitti-gndnet-data). We use the following procedure to generate our dataset:
-* We first crop the point cloud within the range of (x, y) = [(-50, -50), (50, 50)] and apply incremental rotation [-10, 10] degrees about the X and Y axis to generate data with varying slopes and uphills. (SemanticKITTI dataset is recorded with mostly flat terrain)
-* Augmented point cloud is stored as a NumPy file in the folder *reduced_velo*.
-* To generate ground elevation labels we then use the CRF-based surface fitting method as described in [1].
-* We subdivide object classes in SematicKITTI dataset into two categories 
-	1. Ground (road, sidewalk, parking, other-ground, vegetation, terrain)
-	2. Non-ground (all other)
-* We filter out non-ground points from *reduced_velo* and use CRF-method [1] only with the ground points to generate an elevation map.
-* Our ground elevation is represented as a 2D grid with cell resolution 1m x 1m and of size (x, y) = [(-50, -50), (50, 50)], where values of each cell represent the local ground elevation.
-* Ground elevation map is stored as NumPy file in gnd_labels folder.
-* Finally, GndNet uses gnd_labels and reduced_velo (consisting of both ground and non-ground points) for training.
+Because of the bug in the ros2 version of the ros_numpy package, a fork is included as a git submodule into this project. Make sure it is cloned properly. 
 
-If you find the dataset useful consider citing our work and for queries regarding the dataset please contact the authors. 
-
-## Training
-
-To train the model update the data directory path in the config file: config_kittiSem.yaml
-```
-python main.py -s
-```
- It takes around 6 hours for the network to converge and model parameters would be stored in checkpoint.pth.tar file. A pre-trained model is provided in the trained_models folder it can be used to evaluate a sequence in the SemanticKITTI dataset.
-
-```
-python evaluate_SemanticKITTI.py --resume checkpoint.pth.tar --data_dir /home/.../kitti_semantic/dataset/sequences/07/
-```
-
-## Using pre-trained model
-Download the SemanticKITTI dataset from their website [link](http://www.semantic-kitti.org/). To visualize the output we use ROS and rviz. The predicted class (ground or non-ground) of the points in the point cloud is substituted in the intensity field of sensor_msgs.pointcloud. In the rviz use intensity as a color transformer to visualize segmented pointcloud. For the visualization of ground elevation, we use the ROS line marker. 
-
-```
-roscore
-rviz
-python evaluate_SemanticKITTI.py --resume trained_models/checkpoint.pth.tar -v -gnd --data_dir /home/.../SemanticKITTI/dataset/sequences/00/
-```
-Note: The current version of the code for visualization is written in python which can be very slow specifically the generation of ROS marker.
-To only visualize segmentation output without ground elevation remove the `-gnd` flag.
-
-## Results
-
-Semantic segmentation of point cloud ground (green) and non-ground (purple):
-
-<img src="https://github.com/anshulpaigwar/GndNet/blob/master/doc/segmntation_results.png" alt="drawing" width="800"/>
-
-Ground elevation estimation:
-
-<img src="https://github.com/anshulpaigwar/GndNet/blob/master/doc/ground_estimation.png" alt="drawing" width="800"/>
-
-**YouTube video (Segmentation):**
-
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/W_jXU-ewJR0/0.jpg)](https://www.youtube.com/watch?v=W_jXU-ewJR0&t) 
-
-**YouTube video (Ground Estimation):**
-
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/kjZ-n_aIJAg/0.jpg)](https://www.youtube.com/watch?v=kjZ-n_aIJAg)
-
-## TODO
-* Current dataloader loads the entire dataset into RAM first, this reduces training time but it can be hog systems with low RAM.
-* Speed up visualization of ground elevation. Write C++ code for ROS marker.
-* Create generalized ground elevation dataset to be with correspondence to SemanticKitti to be made public.
-
-
-## Citation
-
-If you find this project useful in your research, please consider citing our work:
-```
-@inproceedings{paigwar2020gndnet,
-  title={GndNet: Fast Ground Plane Estimation and Point Cloud Segmentation for Autonomous Vehicles},
-  author={Paigwar, Anshul and Erkent, {\"O}zg{\"u}r and Gonz{\'a}lez, David Sierra and Laugier, Christian},
-  booktitle={IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
-  year={2020}
-}
-```
-
-## Contribution
-
-We welcome you for contributing to this repo, and feel free to contact us for any potential bugs and issues.
-
-
-## References
-
-[1] L. Rummelhard, A. Paigwar, A. Nègre and C. Laugier, "Ground estimation and point cloud segmentation using SpatioTemporal Conditional Random Field," 2017 IEEE Intelligent Vehicles Symposium (IV), Los Angeles, CA, 2017, pp. 1105-1110, doi: 10.1109/IVS.2017.7995861.
-
-[2] Behley, J., Garbade, M., Milioto, A., Quenzel, J., Behnke, S., Stachniss, C., & Gall, J. (2019). SemanticKITTI: A dataset for semantic scene understanding of lidar sequences. In Proceedings of the IEEE International Conference on Computer Vision (pp. 9297-9307).
-
-# GndNET Gini Version
-For the gini we adapted the original GndNet slightly to meet all criteria and have higher accuracies using a stereo camera instead of Lidar data.
-
-## Custom training
-### Data preperation (Custom Version)
-For the training of the network we use a new ground truth computation compared to the original version. This is mainly to get rid of the falsly classified objects close to the ground, that existed mainly because of too high tolerances. In the original version the ground was elevated about half a meter over the actual ground and also smoothing was too big for an accurate prediction on everything beneath 0.5 to 1 m.
-
-#### Definition of Ground
-First we use the SemanticKitti labels to determine which pixels are ground and which aren't. For now we consider ground to be all points marked as:
-
-`'road', 'parking', 'sidewalk', 'other-ground', 'lane-marking', 'terrain'`, which corresponds to the labels `[40, 44, 48, 49,60,72]`.
-
-A complete list of all labels can be found [here](https://github.com/PRBonn/semantic-kitti-api/blob/master/config/semantic-kitti.yaml)
-
-#### Loading to SemanticKitti data
-The raw data consists out of the point clouds `.bin` and the label `.label` files. The point cloud is a raw binary file with each point being four 32-bit floating points `[x,y,z,r]` with r being the reflectivness of the lidar scan. For the GndNet that value will be discarded, because it won't be available when using camera data.
-
-The `.lable` is a 32-bit integer for each point of the point cloud. It has an identifier for the use of timeseries (we won't be needing this) and more importantly the lower 16-bit represent the label numer as describes [here](#definition-of-ground).
-
-#### Augmentation
-Before computing the ground plane, we are augmenting the data first. In the very first step a height variation (+/- 0.5m) is applied and a we are rotating the view direction. Additionally the whole map is slidly tilded to a random amount (+/- 5°) to simulate elevation which the original data is lacking. 
-
-Once that part is done, a block of 10x10m² in the newly defined front is cut out and a field of view from a camera point of view is computed within that area. This is as close as it gets to the camera data we will be working on later on.
-
-There is a script to demonstrate  the effect of the augmentation on a given point cloud and label file: 
-
-```sh
-python3 augmentation_demo.py --label=data/label.label --pcl=data/pcl.bin
-```
-
-#### Computation of the Ground Plane
-TODO
+## Data Preperation
+There is a [detailed description](dataset_utils/gnd_data_generator/README.md) of the new ground plane computation algorithm and parsing of the original dataset in the ground preparation folder.
 
 # Training Algorithm
-While the model itself was untouched so far, the training algorithm changed slightly the in sense of data loading. We added a ring buffer to dynamically load big datasets on the go without the requirement to have everything in memory at once. This significantly reduced hardware requirements while reducing performance only about 1%. 
-
-In the current configuration the training data will use the ring buffer with a buffer size of about 4 GB, while the validation data is loaded completely into memory (~1GB). Buffer sizes can be changed in the main file at the data loading parameters, and switching out the async to sync or the other way around can easliy be done in the [`dataset_utils/dataset_provider.py`](dataset_utils/dataset_provider.py#L239) file.
-
-For there to be little to no reduction in performance, the training script will create a seperate process that only manages the ring buffer and offering everthing in a shared memory for the main process to work with.
+The training algorithm and the model itself has been untouched from the original paper, therefore I will only reference it [here](https://github.com/anshulpaigwar/GndNet). The general concepts are:
+- Grouping the whole point cloud into voxels
+- Extracting features for each voxel (distance to cluster center, distance to pillar center, and some random fixed number of points)
+- Passing it into the network
+- Having a cost function that compares to the previously computed ground truth and also gives credit for smoothness of the plane
 
 # Training Process
-To train the model, the [`main.py`](main.py) file needs to be executed using the proper config file. This requres all packages listed in the [`setup.sh`](setup.sh) script to be installed and an active Cuda environment with an available GPU. 
+To train the model, the [`main.py`](main.py) file needs to be executed using the proper config file. This requires all packages listed in the [`setup.sh`](setup.sh) script to be installed and an active Cuda environment with an available GPU. 
 
-If training on a local machine, you're all set and can follow the general training procedure.
+If training on a local machine, you're all set and can simply start the process:
+(In the first lines of the file you can set if using ROS, or some visulizations)
+
+```
+python3 training.py -s --config=config/config_camera.yaml
+```
+
+Make sure the config file has all the required attributes. (The -s is for saving the checkpoints while training)
 
 ### Training on the RWTH HPC Cluster
 #### Connecting to the Cluster
@@ -246,3 +148,21 @@ And to have a live dashboard of the current (and past) processes:
 [https://perfmon.hpc.itc.rwth-aachen.de/](https://perfmon.hpc.itc.rwth-aachen.de/)
 
 For more slurm commands, see the [official RWTH documentation](https://help.itc.rwth-aachen.de/en/service/rhr4fjjutttf/article/3d20a87835db4569ad9094d91874e2b4/).
+
+## Evaluating Results
+Once you have a trained model or are simply using the pre-trained once provided in this repository, you can use it to run predictions on any point clouds you like. Simply execute the `predict_ground.py` script with the correct arguments:
+
+```
+python3 predict_ground.py -v -gnd --resume=trained_models/checkpoint_2024_04_20.pth.tar --pcl=data/000000.npy --config=config/config_camera.yaml 
+```
+
+Make sure the config file is the same one as used for the training process. Especially the number of input features and the grid dimensions have to match, otherwise the model loading path will fail or the results to not make sense. 
+
+If using one of the two pre-trained models:
+- `trained_models.pth.tar` [trained by GndNet original project]: Uses 4-features input features (x,y,z,intesity) -> `config/config_kittiSem.yaml`
+- `trained_models_20204_04_20.pth.tar` [trained by us]: Uses 3-features (x,y,z) and a camera extract -> `config/config_camera.yaml`
+
+Make sure rviz is running and listeing to the correct topics:
+```
+ros2 run rviz2 rviz2 -d config/rviz_predict_ground.rviz
+```

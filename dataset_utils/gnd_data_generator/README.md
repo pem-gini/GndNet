@@ -28,7 +28,7 @@ Once that part is done, a block of 10x10m² in the newly defined front is cut ou
 There is a script to demonstrate  the effect of the augmentation on a given point cloud and label file: 
 
 ```sh
-python3 augmentation_demo.py --label=data/label.label --pcl=data/pcl.bin
+python3 augmentation_demo.py --pcl=data/pcl.bin
 ```
 
 ## Computation of the Ground Plane
@@ -55,7 +55,7 @@ The next step is to interpolate linearly between all existing points to fill gap
 For a complete ground map all the invalid points at the edges are filled with the same value as the neares valid square. This way the whole grid will be completed.
 
 #### 4. Outlier detection
-To avoid having single outliers in the data, we analyze the deviation of a square in regards to the average of its neighbours (using a 5x5 kernel for convolution), the result is visualized in the top in the middle. In this case there was a single point (square) that was much higher than all its neighbours and created a steep hill in the computed ground plane. This can be easily observed using a threshold. All points above the threshold are shown in the top right image. In case that map is not empty, the square is removed from the origial data and the ground plane computation is repeated. To avoid loops, this process is done a maximum of three times per frame.
+To avoid having single outliers in the data, we analyze the deviation of a square in regards to the average of its neighbours (using a 5x5 kernel for convolution), the result is visualized in the top in the middle. In this case there was a single point (square) that was much higher than all its neighbours and created a steep hill in the computed ground plane. This can be easily observed using a threshold. All points above the threshold are shown in the top right image. In case that map is not empty, the square is removed from the origial data and the ground plane computation is repeated. To avoid infinite loops, this process is done a maximum of ten times per frame.
 
 After the outlier has been removed, the map looks like the following:
 ![graphs](assets/data_prep_cleaned.png)
