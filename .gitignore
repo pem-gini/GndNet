@@ -5,5 +5,7 @@ data/
 *.deb.*
 *.npy
 *.log
-*.tar
+checkpoint.pth.tar
+model_best.pth.tar
+trained_models/training*
 output.*.txt

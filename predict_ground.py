@@ -28,7 +28,7 @@ import numpy as np
 
 # from modules import gnd_est_Loss
 from gnd_net.model import GroundEstimatorNet
-from gnd_net.dataset_utils.dataset_provider import DataAugmentation, AugmentationConfig
+from gnd_net.dataset_utils.gnd_data_generator.dataset_augmentation import DataAugmentation, AugmentationConfig
 from gnd_net.utils.utils import segment_cloud
 from gnd_net.utils.point_cloud_ops import points_to_voxel
 
@@ -51,7 +51,7 @@ if use_cuda:
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--resume', default='trained_models/2024_02_18_model_best.pth.tar', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--config', default='config/config_custom_local.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
+parser.add_argument('--config', default='config/config_camera.yaml', type=str, metavar='PATH', help='path to config file (default: none)')
 parser.add_argument('-v', '--visualize', dest='visualize', action='store_true', help='visualize model on validation set')
 parser.add_argument('-gnd', '--visualize_gnd', dest='visualize_gnd', action='store_true', help='visualize ground elevation')
 parser.add_argument('--gnd_truth', default='', type=str, metavar='PATH', help='visualize ground truth elevation')
