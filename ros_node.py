@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
 import os
+import time
 
 import torch
 import torch.nn.functional as F
 import numpy as np
+
+import matplotlib.pyplot as plt
 
 # from modules import gnd_est_Loss
 from gnd_net.model import GroundEstimatorNet
@@ -17,6 +20,8 @@ from gnd_net.utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_n
 import rclpy
 from rclpy.node import Node
 from rcl_interfaces.msg import ParameterType, ParameterDescriptor
+import tf2_ros
+from scipy.spatial.transform import Rotation as R
 from ament_index_python.packages import get_package_share_directory
 
 from types import SimpleNamespace
@@ -79,6 +84,10 @@ class GndNetNode(Node):
         self.shiftCloud: bool = self.get_parameter("shift_cloud").value
         self.cameraHeight: float = self.get_parameter("camera_height").value
 
+        # Buffer current coordinate frame transformations
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+
         # Create publishers
         self.pubGroundPlane = self.create_publisher(Marker, self.topicGroundPlane, 1)
         self.pubSegmentedPointcloud = self.create_publisher(PointCloud2, self.topicSegmentedPointcloud, 1)
@@ -127,11 +136,39 @@ class GndNetNode(Node):
         # cloud = process_cloud(cloud_msg, cfg, shift_cloud = True, sample_cloud = False)
         cloud = cloud_msg_to_numpy(cloud_msg, self.cameraHeight, shift_cloud = self.shiftCloud)
 
+        try:
+            transform = self.tf_buffer.lookup_transform(self.targetFrame, cloud_msg.header.frame_id, self.get_clock().now().to_msg())
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            self.error('Error looking up transform')
+            return
+        
+        # Transform the cloud. Code from tf2_sensor_msgs package: https://github.com/ros2/geometry2/blob/rolling/tf2_sensor_msgs/tf2_sensor_msgs/tf2_sensor_msgs.py
+        rotation = R.from_quat(np.array([
+            transform.transform.rotation.x,
+            transform.transform.rotation.y,
+            transform.transform.rotation.z,
+            transform.transform.rotation.w,
+        ]))
+        rotation_matrix = R.as_matrix(rotation)
+        translation = np.array([
+            transform.transform.translation.x,
+            transform.transform.translation.y,
+            transform.transform.translation.z + 0.5,
+        ])
+
+        cloud = np.einsum('ij, pj -> pi', rotation_matrix, cloud) + translation 
+        
+        print(f'to: {self.targetFrame}, from: {cloud_msg.header.frame_id}: {translation}')
+
         # np_conversion = time.time()
         # print("np_conversion_time: ", np_conversion- start_time)
 
         # Drop all points with invalid values (e.g. nan)
+        #cloud_raw = np.copy(cloud).reshape((180,-1))
         cloud = cloud[~np.isnan(cloud).any(axis=1)]
+        if len(cloud) == 0:
+            self.warning('Received empty point cloud, ignore')
+            return
 
         self.log('Voxilize point cloud')
         voxels, coors, num_points = points_to_voxel(cloud, self.cfg.voxel_size, self.cfg.pc_range, self.cfg.max_points_voxel, True, self.cfg.max_voxels)
@@ -157,6 +194,7 @@ class GndNetNode(Node):
 
         self.log('Segment cloud')
         pred_GndSeg = segment_cloud(cloud.copy(),np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.08)
+        
         # seg_time = time.time()
         # print("seg_time: ", seg_time - model_time )
         # print("total_time: ", seg_time - np_conversion)

@@ -34,6 +34,8 @@ numba
 ros2_numpy (if using ros)
 ```
 
+If using as a ros node you will need `sudo apt install ros-humble-tf2-msgs`    
+
 All dependecies are also part of the `setup.sh` script. It can simply be run install all required packages, if you are not currently on the RWTH Cluster, comment out the first line to ignore the cluster setup script.
 
 It is recommended using an anaconda environment to avoid version conflicts, see the `setup_conda.sh` script for details.

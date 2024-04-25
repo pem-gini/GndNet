@@ -141,8 +141,7 @@ def shift_cloud_func(cloud, height):
 def cloud_msg_to_numpy(cloud_msg, camera_height, shift_cloud = False):
     # Convert Ros pointcloud2 msg to numpy array
     pc = ros2_numpy.numpify(cloud_msg)
-    points=pc['xyz']
-    cloud = np.array(points, dtype=np.float32)
+    cloud = pc.view(np.float32).reshape((-1,4))[:,:3] # The original point cloud is a structured array with the names [x, y, z, _]. Convert it to an unstructured array
 
     if shift_cloud:
         cloud  = shift_cloud_func(cloud, camera_height)
