@@ -168,3 +168,24 @@ Make sure rviz is running and listeing to the correct topics:
 ```
 ros2 run rviz2 rviz2 -d config/rviz_predict_ground.rviz
 ```
+
+## CUDA in WSL2
+If you want to work on Windows, you can set up CUDA to work with your NVIDIA GPU within the Windows Subsystem. It is important that you have not tried installing CUDA with the normal Linux instructions, this will result in broken system configurations and the easiest way is to simply create a new instance of your distribution.
+
+The following is tested in both Ubuntu 22.04 and 24.04. 
+- Simply follow [these instructions](deb http://security.ubuntu.com/ubuntu lunar-security main universe). A short overview:
+  - Install Game Ready Driver on Windows
+  - Fix the key problem `sudo apt-key del 7fa2af80`
+  - Use Option 1: Use [Installation Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0&target_type=deb_local)
+  - Dowload the `deb(local)` file and execute all commands listed on the page
+  - If you encounter the following error while running the final cuda install command:
+ ```bash
+   The following packages have unmet dependencies:
+ nsight-systems-2023.4.4 : Depends: libtinfo5 but it is not installable
+E: Unable to correct problems, you have held broken packages.
+ ```
+  - You need to install libtinfo5 manually:
+      - Simply add `deb http://security.ubuntu.com/ubuntu lunar-security main universe` to your sources (Ubuntu 24: `/etc/apt/sources.list.d/libtinfo5.list`, Ubuntu 22: `/etc/apt/sources.list`)
+      - Update sources: `sudo apt update`
+      - Install `libtinfo5`: `sudo apt-get install libtinfo5`
+      - You're all set, you can try installing CUDA again: `sudo apt-get -y install cuda-toolkit-12-4`
