@@ -178,14 +178,10 @@ The following is tested in both Ubuntu 22.04 and 24.04.
   - Fix the key problem `sudo apt-key del 7fa2af80`
   - Use Option 1: Use [Installation Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0&target_type=deb_local)
   - Dowload the `deb(local)` file and execute all commands listed on the page
-  - If you encounter the following error while running the final cuda install command:
- ```bash
-   The following packages have unmet dependencies:
- nsight-systems-2023.4.4 : Depends: libtinfo5 but it is not installable
-E: Unable to correct problems, you have held broken packages.
- ```
-  - You need to install libtinfo5 manually:
+  - If you encounter the following error while running the final cuda install command: `The following packages have unmet dependencies: nsight-systems-2023.4.4 : Depends: libtinfo5 but it is not installable`
+    - You need to install libtinfo5 manually:
       - Simply add `deb http://security.ubuntu.com/ubuntu lunar-security main universe` to your sources (Ubuntu 24: `/etc/apt/sources.list.d/libtinfo5.list`, Ubuntu 22: `/etc/apt/sources.list`)
       - Update sources: `sudo apt update`
       - Install `libtinfo5`: `sudo apt-get install libtinfo5`
       - You're all set, you can try installing CUDA again: `sudo apt-get -y install cuda-toolkit-12-4`
+- To test if the installation was succesfull (a reboot of Windows might be necessary), open python in WSL and run `import torch` and `torch.cuda.is_available()`. The response should hopefully be `True` otherwise recheck if everything is installed properly.
