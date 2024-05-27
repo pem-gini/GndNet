@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 # from modules import gnd_est_Loss
 from gnd_net.model import GroundEstimatorNet
 from gnd_net.utils.point_cloud_ops import points_to_voxel
-from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud
-from gnd_net.utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_no_intesity
+from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud, split_segmented_cloud
+from gnd_net.utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_no_intensity
 # import ipdb as pdb
 
 # Ros Includes
@@ -64,8 +64,6 @@ class GndNetNode(Node):
         self.declare_parameter("topic_ground_plane", None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
         self.declare_parameter("topic_segmented_point_cloud", None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
         self.declare_parameter("topic_pcl_no_ground", None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
-        self.declare_parameter("camera_height", 0.0, ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE))
-        self.declare_parameter("shift_cloud", True)
 
         # self.declare_parameter("num_points", 100000, ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE))
         # self.declare_parameter("grid_range", [-10, -10, 10, 10] , ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))
@@ -102,8 +100,6 @@ class GndNetNode(Node):
         self.topicGroundPlane: str = self.get_parameter("topic_ground_plane").value
         self.topicSegmentedPointcloud: str = self.get_parameter("topic_segmented_point_cloud").value
         self.topicPclNoGround: str = self.get_parameter("topic_pcl_no_ground").value
-        self.shiftCloud: bool = self.get_parameter("shift_cloud").value
-        self.cameraHeight: float = self.get_parameter("camera_height").value
 
         # Gnd Net Model Parameter
         package_share_directory = get_package_share_directory('gnd_net')
@@ -180,7 +176,7 @@ class GndNetNode(Node):
         self.log('Got new frame')
         # start_time = time.time()
         # cloud = process_cloud(cloud_msg, cfg, shift_cloud = True, sample_cloud = False)
-        cloud = cloud_msg_to_numpy(cloud_msg, self.cameraHeight, shift_cloud = self.shiftCloud)
+        cloud = cloud_msg_to_numpy(cloud_msg, 0, shift_cloud = False)
 
         if self.targetFrame != cloud_msg.header.frame_id:
             try:
@@ -236,8 +232,8 @@ class GndNetNode(Node):
                 # print("model_time: ", model_time - cloud_process)
 
         self.log('Segment cloud')
-        pred_GndSeg = segment_cloud(cloud.copy(),np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
-        
+        cloud_obs, cloud_gnd, pred_GndSeg = split_segmented_cloud(cloud.copy(),np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
+
         # seg_time = time.time()
         # print("seg_time: ", seg_time - model_time )
         # print("total_time: ", seg_time - np_conversion)
@@ -246,7 +242,7 @@ class GndNetNode(Node):
         self.log('Publish results')
         gnd_marker_pub(self, output.cpu().numpy(), self.pubGroundPlane, self.cfg, color = "red", frame_id=self.targetFrame)
         np2ros_pub_2(self, cloud, self.pubSegmentedPointcloud, None, pred_GndSeg, self.targetFrame)
-        np2ros_pub_2_no_intesity(self, cloud, self.pubPclNoGround, self.targetFrame)
+        np2ros_pub_2_no_intensity(self, cloud_obs, self.pubPclNoGround, self.targetFrame)
         # vis_time = time.time()
         # print("vis_time: ", vis_time - model_time)
 
