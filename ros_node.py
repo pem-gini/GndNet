@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import subprocess
 import time
 
 import torch
@@ -28,14 +29,36 @@ from types import SimpleNamespace
 from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import Marker
 
+import yaml
+
+def get_git_root():
+    try:
+        git_root = subprocess.check_output(
+            ['git', 'rev-parse', '--show-toplevel'],
+            stderr=subprocess.STDOUT
+        ).strip().decode('utf-8')
+        return git_root
+    except subprocess.CalledProcessError:
+        return None
+
+def resolveEnv(v):
+    if isinstance(v, str):
+        if "$HOME" in v:
+            v = v.replace("$HOME", os.environ.get('HOME'))
+        if "~" in v:
+            v = v.replace("~", os.environ.get('HOME'))
+        if "$GITDIR" in v:
+            v = v.replace("$GITDIR", get_git_root())
+    return v
+
 class GndNetNode(Node):
     def __init__(self):
         super().__init__('gnd_net')
         self.log("Initializing GndNet Node")
 
         self.declare_parameter("debug", True)
-        self.declare_parameter("cuda_enabled", True)
         self.declare_parameter("model_path", None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
+        self.declare_parameter("model_config", None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
         self.declare_parameter("target_frame", 'map', ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
         self.declare_parameter("topic_point_cloud", None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
         self.declare_parameter("topic_ground_plane", None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
@@ -44,45 +67,68 @@ class GndNetNode(Node):
         self.declare_parameter("camera_height", 0.0, ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE))
         self.declare_parameter("shift_cloud", True)
 
-        # Gnd Net Model Parameter
-        self.declare_parameter("num_points", 100000, ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE))
-        self.declare_parameter("grid_range", [-10, -10, 10, 10] , ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))
-        self.declare_parameter("pc_range", [-10,-10,-4,10,10,4] , ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))# cmcdot grid origin is at base_link not the velodyne so have to shift cropping points
-        self.declare_parameter("voxel_size", [.4, .4, 8.0], ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))
-        self.declare_parameter("max_points_voxel", 100, ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
-        self.declare_parameter("max_voxels", 2500, ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
-        self.declare_parameter("input_features", 3, ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
-        self.declare_parameter("use_norm", False, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
-        self.declare_parameter("vfe_filters", [64] , ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER_ARRAY))# only one filter for now
-        self.declare_parameter("with_distance", False, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
-        self.cfg = {
-            "shift_cloud": self.get_parameter("shift_cloud").value,
-            "camera_height": self.get_parameter("camera_height").value,
-            "num_points": self.get_parameter("num_points").value,
-            "grid_range": self.get_parameter("grid_range").value,
-            "pc_range": self.get_parameter("pc_range").value,
-            "voxel_size": self.get_parameter("voxel_size").value,
-            "max_points_voxel": self.get_parameter("max_points_voxel").value,
-            "max_voxels": self.get_parameter("max_voxels").value,
-            "input_features": self.get_parameter("input_features").value,
-            "use_norm": self.get_parameter("use_norm").value,
-            "vfe_filters": self.get_parameter("vfe_filters").value,
-            "with_distance": self.get_parameter("with_distance").value,
-        }
-        self.cfg = SimpleNamespace(**self.cfg) # Make it compatible with the GndNet config format (support dot notation)
-        self.cfg.batch_size = 1 # Always set it to one
+        # self.declare_parameter("num_points", 100000, ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE))
+        # self.declare_parameter("grid_range", [-10, -10, 10, 10] , ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))
+        # self.declare_parameter("pc_range", [-10,-10,-4,10,10,4] , ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))# cmcdot grid origin is at base_link not the velodyne so have to shift cropping points
+        # self.declare_parameter("voxel_size", [.4, .4, 8.0], ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))
+        # self.declare_parameter("max_points_voxel", 100, ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
+        # self.declare_parameter("max_voxels", 2500, ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
+        # self.declare_parameter("input_features", 3, ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
+        # self.declare_parameter("use_norm", False, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
+        # self.declare_parameter("vfe_filters", [64] , ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER_ARRAY))# only one filter for now
+        # self.declare_parameter("with_distance", False, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
+        # self.cfg = {
+        #     "shift_cloud": self.get_parameter("shift_cloud").value,
+        #     "camera_height": self.get_parameter("camera_height").value,
+        #     "num_points": self.get_parameter("num_points").value,
+        #     "grid_range": self.get_parameter("grid_range").value,
+        #     "pc_range": self.get_parameter("pc_range").value,
+        #     "voxel_size": self.get_parameter("voxel_size").value,
+        #     "max_points_voxel": self.get_parameter("max_points_voxel").value,
+        #     "max_voxels": self.get_parameter("max_voxels").value,
+        #     "input_features": self.get_parameter("input_features").value,
+        #     "use_norm": self.get_parameter("use_norm").value,
+        #     "vfe_filters": self.get_parameter("vfe_filters").value,
+        #     "with_distance": self.get_parameter("with_distance").value,
+        # }
+        # self.cfg = SimpleNamespace(**self.cfg) # Make it compatible with the GndNet config format (support dot notation)
 
         # Read in all parameters
         self.debug: bool = self.get_parameter("debug").value
-        self.cudaEnabled: bool = self.get_parameter("cuda_enabled").value
         self.targetFrame: str = self.get_parameter("target_frame").value
         self.modelPath: str = self.get_parameter("model_path").value
+        self.modelConfig: str = self.get_parameter("model_config").value
         self.topicPointCloud: str = self.get_parameter("topic_point_cloud").value
         self.topicGroundPlane: str = self.get_parameter("topic_ground_plane").value
         self.topicSegmentedPointcloud: str = self.get_parameter("topic_segmented_point_cloud").value
         self.topicPclNoGround: str = self.get_parameter("topic_pcl_no_ground").value
         self.shiftCloud: bool = self.get_parameter("shift_cloud").value
         self.cameraHeight: float = self.get_parameter("camera_height").value
+
+        # Gnd Net Model Parameter
+        package_share_directory = get_package_share_directory('gnd_net')
+        #package_share_directory = pkg_resources.get_distribution('gnd_net').get_metadata('RECORD').split()[0]
+        model_config_path = os.path.join(package_share_directory, self.modelConfig)
+        with open(model_config_path) as f:
+            config_dict = yaml.load(f, Loader=yaml.FullLoader)
+
+            for k, v in config_dict.items():
+                ### env var replacement
+                v = resolveEnv(v)
+                ### set attribute
+                config_dict[k] = v
+
+        class ConfigClass:
+            def __init__(self, **entries):
+                self.__dict__.update(entries)
+        
+        self.cfg = ConfigClass(**config_dict) # convert python dict to class for ease of use
+        self.cfg.batch_size = 1 # Always set it to one
+
+        self.cudaEnabled = torch.cuda.is_available()
+
+        if not self.cudaEnabled:
+            self.warning('CUDA not available. Using CPU for GndNet prediction!!!')
 
         # Buffer current coordinate frame transformations
         self.tf_buffer = tf2_ros.Buffer()
@@ -136,30 +182,28 @@ class GndNetNode(Node):
         # cloud = process_cloud(cloud_msg, cfg, shift_cloud = True, sample_cloud = False)
         cloud = cloud_msg_to_numpy(cloud_msg, self.cameraHeight, shift_cloud = self.shiftCloud)
 
-        try:
-            transform = self.tf_buffer.lookup_transform(self.targetFrame, cloud_msg.header.frame_id, self.get_clock().now().to_msg())
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-            self.error('Error looking up transform')
-            return
+        if self.targetFrame != cloud_msg.header.frame_id:
+            try:
+                transform = self.tf_buffer.lookup_transform(self.targetFrame, cloud_msg.header.frame_id, self.get_clock().now().to_msg())
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                self.error('Error looking up transform')
+                return
         
-        # Transform the cloud. Code from tf2_sensor_msgs package: https://github.com/ros2/geometry2/blob/rolling/tf2_sensor_msgs/tf2_sensor_msgs/tf2_sensor_msgs.py
-        rotation = R.from_quat(np.array([
-            transform.transform.rotation.x,
-            transform.transform.rotation.y,
-            transform.transform.rotation.z,
-            transform.transform.rotation.w,
-        ]))
-        rotation_matrix = R.as_matrix(rotation)
-        translation = np.array([
-            transform.transform.translation.x,
-            transform.transform.translation.y,
-            transform.transform.translation.z + 0.5,
-        ])
+            # Transform the cloud. Code from tf2_sensor_msgs package: https://github.com/ros2/geometry2/blob/rolling/tf2_sensor_msgs/tf2_sensor_msgs/tf2_sensor_msgs.py
+            rotation = R.from_quat(np.array([
+                transform.transform.rotation.x,
+                transform.transform.rotation.y,
+                transform.transform.rotation.z,
+                transform.transform.rotation.w,
+            ]))
+            rotation_matrix = R.as_matrix(rotation)
+            translation = np.array([
+                transform.transform.translation.x,
+                transform.transform.translation.y,
+                transform.transform.translation.z,
+            ])
 
-        cloud = np.einsum('ij, pj -> pi', rotation_matrix, cloud) + translation 
-        
-        print(f'to: {self.targetFrame}, from: {cloud_msg.header.frame_id}: {translation}')
-
+            cloud = np.einsum('ij, pj -> pi', rotation_matrix, cloud) + translation
         # np_conversion = time.time()
         # print("np_conversion_time: ", np_conversion- start_time)
 
@@ -185,7 +229,6 @@ class GndNetNode(Node):
 
         # cloud_process = time.time()
         # print("cloud_process: ", cloud_process - np_conversion)
-
         self.log('Run prediction')
         with torch.no_grad():
                 output = self.model(voxels, coors, num_points)
@@ -193,7 +236,7 @@ class GndNetNode(Node):
                 # print("model_time: ", model_time - cloud_process)
 
         self.log('Segment cloud')
-        pred_GndSeg = segment_cloud(cloud.copy(),np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.08)
+        pred_GndSeg = segment_cloud(cloud.copy(),np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
         
         # seg_time = time.time()
         # print("seg_time: ", seg_time - model_time )

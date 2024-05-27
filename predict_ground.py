@@ -7,7 +7,7 @@ email: p.anshul6@gmail.com
 
 
 # If this is the main scripts, we need gnd_net within our path as a module
-# This is to make all imports compatible with both ros and ros free envrionments
+# This is to make all imports compatible with both ros and ros free environments
 if __name__ == '__main__':
     import sys
     sys.path.insert(1, "..") # Put the parent right behind the current directory (puts it before all ROS packages)
