@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 # from modules import gnd_est_Loss
 from gnd_net.model import GroundEstimatorNet
 from gnd_net.utils.point_cloud_ops import points_to_voxel
-from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud, split_segmented_cloud
+from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud, split_segmented_cloud, segment_cloud_noground
 from gnd_net.utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_no_intensity
 # import ipdb as pdb
 
@@ -232,7 +232,7 @@ class GndNetNode(Node):
                 # print("model_time: ", model_time - cloud_process)
 
         self.log('Segment cloud')
-        cloud_obs, cloud_gnd, pred_GndSeg = split_segmented_cloud(cloud.copy(),np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
+        pred_GndSeg, cloud_obs = segment_cloud_noground(cloud.copy(), cloud.copy(), np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
 
         # seg_time = time.time()
         # print("seg_time: ", seg_time - model_time )

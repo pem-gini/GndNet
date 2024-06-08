@@ -172,9 +172,9 @@ def segment_cloud(points, grid_size, voxel_size, elevation_map, threshold = 0.2)
             rgb[i] = -1 # outside range
     return rgb
 
-def split_segmented_cloud(points, grid_size, voxel_size, elevation_map, threshold = 0.2):
-    points_gnd = []
-    points_obs = []
+@jit(nopython=True)
+def segment_cloud_noground(points, points_obstacle, grid_size, voxel_size, elevation_map, threshold = 0.2):
+    """In addition to segment_cloud, this function also efficiently produces an obstacle only pointcloud array"""
     lidar_data = points[:, :2] # neglecting the z co-ordinate
     height_data = points[:, 2] #+ 1.732
     rgb = np.zeros(points.shape[0])
@@ -184,20 +184,21 @@ def split_segmented_cloud(points, grid_size, voxel_size, elevation_map, threshol
     lidar_data = np.floor(lidar_data)
     lidar_data = lidar_data.astype(np.int32)
     N = lidar_data.shape[0] # Total number of points
+    obs_cnt = 0
     for i in range(N):
         x = lidar_data[i,0]
         y = lidar_data[i,1]
         z = height_data[i]
         if (0 < x < elevation_map.shape[0]) and (0 < y < elevation_map.shape[1]):
             if z > elevation_map[x,y] + threshold:
-                rgb[i] = 1
-                points_obs.append(points[i])
+                rgb[i] = 1 # is obs
+                points_obstacle[obs_cnt] = points_obstacle[i]
+                obs_cnt += 1
             else:
                 rgb[i] = 0 # is gnd
-                points_gnd.append(points[i])
         else:
             rgb[i] = -1 # outside range
-    return np.array(points_obs), np.array(points_gnd), rgb
+    return rgb, points_obstacle[:obs_cnt]
 
 @jit(nopython=True)
 def lidar_to_img(points, grid_size, voxel_size, fill):
