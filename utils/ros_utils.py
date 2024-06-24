@@ -51,16 +51,23 @@ def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red", frame_id
     gnd_marker.scale.x = 0.05
     gnd_marker.scale.y = 0.05
     gnd_marker.scale.z = 0.05
-    if(color == "red"):
+    if isinstance(color, tuple):
         gnd_marker.color.a = 0.5
-        gnd_marker.color.r = 1.0
-        gnd_marker.color.g = 0.0
-        gnd_marker.color.b = 0.0
-    if(color == "green"):
-        gnd_marker.color.a = 0.5
-        gnd_marker.color.r = 0.0
-        gnd_marker.color.g = 1.0
-        gnd_marker.color.b = 0.0
+        r,g,b = color
+        gnd_marker.color.r = float(r)
+        gnd_marker.color.g = float(g)
+        gnd_marker.color.b = float(b)
+    else:
+        if(color == "red"):
+            gnd_marker.color.a = 0.5
+            gnd_marker.color.r = 1.0
+            gnd_marker.color.g = 0.0
+            gnd_marker.color.b = 0.0
+        if(color == "green"):
+            gnd_marker.color.a = 0.5
+            gnd_marker.color.r = 0.0
+            gnd_marker.color.g = 1.0
+            gnd_marker.color.b = 0.0
     gnd_marker.points = []
 
     # gnd_labels are arranged in reverse order

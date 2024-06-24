@@ -240,7 +240,7 @@ class GndNetNode(Node):
         # print()
         # pdb.set_trace()
         # self.log('Publish results')
-        gnd_marker_pub(self, output.cpu().numpy(), self.pubGroundPlane, self.cfg, color = "red", frame_id=self.targetFrame)
+        gnd_marker_pub(self, output.cpu().numpy(), self.pubGroundPlane, self.cfg, color = (175,175,175), frame_id=self.targetFrame)
         np2ros_pub_2(self, cloud, self.pubSegmentedPointcloud, None, pred_GndSeg, self.targetFrame)
         np2ros_pub_2_no_intensity(self, cloud_obs, self.pubPclNoGround, self.targetFrame)
         # vis_time = time.time()
