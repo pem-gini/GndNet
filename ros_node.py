@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 # from modules import gnd_est_Loss
 from gnd_net.model import GroundEstimatorNet
 from gnd_net.utils.point_cloud_ops import points_to_voxel
-from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud, split_segmented_cloud, segment_cloud_noground
+from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud, segment_cloud_noground
 from gnd_net.utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_no_intensity
 # import ipdb as pdb
 
@@ -173,7 +173,7 @@ class GndNetNode(Node):
         return model.eval() # Switch to evaluation mode
 
     def callback(self, cloud_msg):
-        self.log('Got new frame')
+        # self.log('Got new frame')
         # start_time = time.time()
         # cloud = process_cloud(cloud_msg, cfg, shift_cloud = True, sample_cloud = False)
         cloud = cloud_msg_to_numpy(cloud_msg, 0, shift_cloud = False)
@@ -210,7 +210,7 @@ class GndNetNode(Node):
             self.warning('Received empty point cloud, ignore')
             return
 
-        self.log('Voxilize point cloud')
+        # self.log('Voxilize point cloud')
         voxels, coors, num_points = points_to_voxel(cloud, self.cfg.voxel_size, self.cfg.pc_range, self.cfg.max_points_voxel, True, self.cfg.max_voxels)
         if self.cudaEnabled:
             voxels = torch.from_numpy(voxels).float().cuda()
@@ -225,13 +225,13 @@ class GndNetNode(Node):
 
         # cloud_process = time.time()
         # print("cloud_process: ", cloud_process - np_conversion)
-        self.log('Run prediction')
+        # self.log('Run prediction')
         with torch.no_grad():
                 output = self.model(voxels, coors, num_points)
                 # model_time = time.time()
                 # print("model_time: ", model_time - cloud_process)
 
-        self.log('Segment cloud')
+        # self.log('Segment cloud')
         pred_GndSeg, cloud_obs = segment_cloud_noground(cloud.copy(), cloud.copy(), np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
 
         # seg_time = time.time()
@@ -239,7 +239,7 @@ class GndNetNode(Node):
         # print("total_time: ", seg_time - np_conversion)
         # print()
         # pdb.set_trace()
-        self.log('Publish results')
+        # self.log('Publish results')
         gnd_marker_pub(self, output.cpu().numpy(), self.pubGroundPlane, self.cfg, color = "red", frame_id=self.targetFrame)
         np2ros_pub_2(self, cloud, self.pubSegmentedPointcloud, None, pred_GndSeg, self.targetFrame)
         np2ros_pub_2_no_intensity(self, cloud_obs, self.pubPclNoGround, self.targetFrame)

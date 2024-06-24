@@ -42,7 +42,6 @@ from numba import jit,types
 def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red", frame_id = 'map'):
     length = int(cfg.grid_range[2] - cfg.grid_range[0]) # x direction
     width = int(cfg.grid_range[3] - cfg.grid_range[1])    # y direction
-    print(type(ros_node.get_clock().now()))
 
     gnd_marker = Marker()
     gnd_marker.header.frame_id = frame_id
@@ -180,7 +179,7 @@ def np2ros_pub_2(ros_node, points, pcl_pub, timestamp, color, frame_id = "map"):
     # rospy.loginfo("happily publishing sample pointcloud.. !")
     pcl_pub.publish(cloud_msg)
 
-def np2ros_pub_2_no_intesity(ros_node, points, pcl_pub, frame_id = "map"):
+def np2ros_pub_2_no_intensity(ros_node, points, pcl_pub, frame_id = "map"):
     npoints = points.shape[0] # Num of points in PointCloud
     points_arr = np.zeros((npoints,), dtype=[
                                         ('x', np.float32),
