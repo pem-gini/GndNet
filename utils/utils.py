@@ -139,9 +139,10 @@ def shift_cloud_func(cloud, height):
     return cloud
 
 def cloud_msg_to_numpy(cloud_msg, camera_height, shift_cloud = False):
+    dimensionsInCloud = len(cloud_msg.fields) ### is 4 normally, could be 3 if only xyz
     # Convert Ros pointcloud2 msg to numpy array
     pc = ros2_numpy.numpify(cloud_msg)
-    cloud = pc.view(np.float32).reshape((-1,4))[:,:3] # The original point cloud is a structured array with the names [x, y, z, _]. Convert it to an unstructured array
+    cloud = pc.view(np.float32).reshape((-1, dimensionsInCloud))[:,:3] # The original point cloud is a structured array with the names [x, y, z, _]. Convert it to an unstructured array
 
     if shift_cloud:
         cloud  = shift_cloud_func(cloud, camera_height)
