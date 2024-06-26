@@ -178,15 +178,17 @@ class PointPillarsScatter(nn.Module):
             batch_mask = coords[:, 0] == batch_itt
             this_coords = coords[batch_mask, :]
             indices = this_coords[:, 2] * self.nx + this_coords[:, 3]
-            indices = indices.type(torch.long)
-            voxels = voxel_features[batch_mask, :]
-            voxels = voxels.t()
+            indices = indices.type(torch.long) 
+            try:
+                voxels = voxel_features[batch_mask, :]
+                voxels = voxels.t()
+                # Now scatter the blob back to the canvas.
+                canvas[:, indices] = voxels
 
-            # Now scatter the blob back to the canvas.
-            canvas[:, indices] = voxels
-
-            # Append to a list for later stacking.
-            batch_canvas.append(canvas)
+                # Append to a list for later stacking.
+                batch_canvas.append(canvas)
+            except IndexError as e:
+                pass
 
         # Stack to 3-dim tensor (batch-size, nchannels, nrows*ncols)
         batch_canvas = torch.stack(batch_canvas, 0)

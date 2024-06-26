@@ -176,7 +176,7 @@ class GndNetNode(Node):
         # self.log('Got new frame')
         # start_time = time.time()
         # cloud = process_cloud(cloud_msg, cfg, shift_cloud = True, sample_cloud = False)
-        cloud = cloud_msg_to_numpy(cloud_msg, 0, shift_cloud = False)
+        cloud = cloud_msg_to_numpy(cloud_msg, 0, shift_cloud = False)["xyz"]
 
         if self.targetFrame != cloud_msg.header.frame_id:
             try:

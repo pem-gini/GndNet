@@ -138,15 +138,61 @@ def shift_cloud_func(cloud, height):
     cloud[:,2] += height
     return cloud
 
-def cloud_msg_to_numpy(cloud_msg, camera_height, shift_cloud = False):
-    dimensionsInCloud = len(cloud_msg.fields) ### is 4 normally, could be 3 if only xyz
-    # Convert Ros pointcloud2 msg to numpy array
-    pc = ros2_numpy.numpify(cloud_msg)
-    cloud = pc.view(np.float32).reshape((-1, dimensionsInCloud))[:,:3] # The original point cloud is a structured array with the names [x, y, z, _]. Convert it to an unstructured array
 
+
+# def cloud_msg_to_numpy(cloud_msg, camera_height, shift_cloud = False):
+#     # Convert Ros pointcloud2 msg to numpy array
+#     pc = ros2_numpy.numpify(cloud_msg)
+#     print(pc.shape)
+#     cloud = pc.view(np.float32).reshape((-1, 4))[:,:3] # The original point cloud is a structured array with the names [x, y, z, _]. Convert it to an unstructured array
+#     if shift_cloud:
+#         cloud  = shift_cloud_func(cloud, camera_height)
+#     return cloud
+def cloud_msg_to_numpy(msg, camera_height, shift_cloud = False):
+    """
+    Convert a sensor_msgs/PointCloud2 message to a NumPy array. The fields
+    in the PointCloud2 message are mapped to the fields in the NumPy array
+    as follows:
+    * x, y, z -> X, Y, Z
+    * rgb -> RGB
+    * intensity -> I
+    * other fields are ignored
+    """
+    # Get the index of the "rgb" and "intensity" fields in the PointCloud2 message
+    field_names = [field.name for field in msg.fields]
+    # Check if the "rgb" field is present
+    if "rgb" in field_names:
+        rgb_idx = field_names.index("rgb")
+        rgb_flag = True
+    else:
+        rgb_flag = False
+    if "intensity" in field_names:
+        intensity_idx = field_names.index("intensity")
+        intensity_flag = True
+    else:
+        intensity_flag = False
+    # Convert the PointCloud2 message to a NumPy array
+    pc_data = np.frombuffer(
+        msg.data, dtype=np.uint8).reshape(-1, msg.point_step)
+    xyz = pc_data[:, 0:12].view(dtype=np.float32).reshape(-1, 3)
+    if rgb_flag:
+        rgb = pc_data[:, rgb_idx:rgb_idx+3][:, ::-1]
+    if intensity_flag:
+        intensity = pc_data[:, intensity_idx:intensity_idx +
+                            2].view(dtype=np.uint16)
+    
     if shift_cloud:
-        cloud  = shift_cloud_func(cloud, camera_height)
-    return cloud
+        xyz  = shift_cloud_func(xyz, camera_height)
+
+    # return the arrays in a dictionary
+    if rgb_flag and intensity_flag:
+        return {"xyz": xyz, "rgb": rgb, "intensity": intensity}
+    if rgb_flag and not intensity_flag:
+        return {"xyz": xyz, "rgb": rgb}
+    if not rgb_flag and intensity_flag:
+        return {"xyz": xyz, "intensity": intensity}
+    if not rgb_flag and not intensity_flag:
+        return {"xyz": xyz}
 
 
 @jit(nopython=True)
