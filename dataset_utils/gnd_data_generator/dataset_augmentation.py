@@ -111,7 +111,10 @@ class DataAugmentation():
 
 			# print(f'{i}: Coefficient: {coefficient}, Density: {density}, Min distance: {min_distance}')
 
-			assert min_distance < max_x, "The minimal distance must be less than the distance of the furthest point"
+			# If the noise only starts behind the data, simply do not add noise
+			if min_distance >= max_x:
+				return data
+			
 			area_xz_plane = 0.5 * (max_x - min_distance) * max_x * coefficient
 			volume = area_xz_plane * (min_range[0][1] - min_range[0][0])
 			noise_cnt[i] = int(volume * density)
