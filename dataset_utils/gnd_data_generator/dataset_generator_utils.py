@@ -4,6 +4,7 @@ from scipy.spatial import Delaunay
 import torch
 import numpy as np
 from numpy.linalg import inv
+import logging
 
 from scipy import signal
 from scipy.spatial.transform import Rotation as R
@@ -169,7 +170,7 @@ def lidar_to_heightmap(points, grid_size, voxel_size, max_points, lidar_height):
     height_data = points[:, 2] + lidar_height
     # pdb.set_trace()
     lidar_data -= np.array([grid_size[0], grid_size[1]])
-    lidar_data = lidar_data /voxel_size # multiplying by the resolution
+    lidar_data = lidar_data / voxel_size # multiplying by the resolution
     lidar_data = np.floor(lidar_data)
     lidar_data = lidar_data.astype(np.int32)
     # lidar_data = np.reshape(lidar_data, (-1, 2))
@@ -189,7 +190,7 @@ def lidar_to_heightmap(points, grid_size, voxel_size, max_points, lidar_height):
                     num_points[x,y] += 1
     
     return heightmap.sum(axis = 2), heightmap, num_points
-    
+
 #     return heightmap
 
 # def lidar_to_heightmap(points, grid_size, voxel_size, max_points):
@@ -230,42 +231,63 @@ def semantically_segment_cloud(points, grid_size, voxel_size, elevation_map, lid
             rgb[i,0] = -1
     return rgb
 
-def compute_ground_plane(cloud):
+def compute_ground_plane(cloud, grid_size, voxel_size, lidar_height, export_intermediate_step=False, visualizer=None, logger=logging.root):
+    # start = time.time()
+    # remove all non ground points; gnd labels = [40, 44, 48, 49]
+    # gnd, obs = segment_cloud(cloud,[40, 44, 48, 49])
+    # A complete list of all labels: https://github.com/PRBonn/semantic-kitti-api/blob/master/config/semantic-kitti.yaml
     gnd, obs = segment_cloud(cloud,[40, 44, 48, 49,60,72]) # ['road', 'parking', 'sidewalk', 'other-ground', 'lane-marking', 'terrain'] 
-    global visualize, grid_size, voxel_size, lidar_height
 
     grid_size_np = np.asarray(grid_size)
-    gnd_img = lidar_to_img(np.copy(gnd), grid_size_np, voxel_size, fill = 1, lidar_height=lidar_height)
     gnd_heightmap, heightmap, num_points = lidar_to_heightmap(np.copy(gnd), grid_size_np, voxel_size, max_points = 100, lidar_height=lidar_height)
 
     filled_voxels = num_points!=0
     gnd_heightmap = np.divide(gnd_heightmap, num_points, where=filled_voxels)
 
+    if export_intermediate_step:
+        np.save('heightmap', gnd_heightmap)
+        np.save('heightmap_raw', heightmap)
+        np.save('num_points', num_points)
+
     # Interpolate missing spots
-    y,x = np.where(filled_voxels)
-    interpL = LinearNDInterpolator(list(zip(y,x)), gnd_heightmap[y,x])
-    xx = np.arange(gnd_heightmap.shape[0])
-    yy = np.arange(gnd_heightmap.shape[1])
-    X, Y = np.meshgrid(xx, yy, indexing='ij')
-    interpolated_linear = interpL(X,Y)
-
-    empty_voxels = np.ma.masked_invalid(interpolated_linear).mask
-    y,x = np.where(np.logical_not(empty_voxels))
-    interpQ = NearestNDInterpolator(list(zip(y,x)), interpolated_linear[y,x])
-
-    y,x=np.where(empty_voxels)
-    image_result = np.copy(interpolated_linear)
-    image_result[y,x] = np.nan_to_num(interpQ(y,x))
-
-    # Make sure there are no outliers
-    average_ground = signal.convolve2d(image_result, np.ones((5,5))/25, mode='same' , boundary='symm') # Average in 5x5 squares = 1m²
-    diff_to_average = image_result - average_ground # Should be max less than 0.1m <= 10% of elevation
-    outliers = diff_to_average > 0.1
+    for i in range(10): # Max 3 runs
+        y,x = np.where(filled_voxels)
+        interpL = LinearNDInterpolator(list(zip(y,x)), gnd_heightmap[y,x])
+        xx = np.arange(gnd_heightmap.shape[0])
+        yy = np.arange(gnd_heightmap.shape[1])
+        X, Y = np.meshgrid(xx, yy, indexing='ij')
+        interpolated_linear = interpL(X,Y)
     
-    seg = semantically_segment_cloud(cloud.copy(), grid_size_np, voxel_size, image_result)
-    
-    return (
-        (gnd_heightmap, heightmap, num_points), 
-        (gnd, image_result.T, seg),
-        (gnd_img, diff_to_average, outliers, gnd_heightmap, interpolated_linear)
-    )
+        empty_voxels = np.ma.masked_invalid(interpolated_linear).mask
+        y,x = np.where(np.logical_not(empty_voxels))
+        interpQ = NearestNDInterpolator(list(zip(y,x)), interpolated_linear[y,x])
+
+        y,x=np.where(empty_voxels)
+        image_result = np.copy(interpolated_linear)
+        image_result[y,x] = np.nan_to_num(interpQ(y,x))
+
+        # Make sure there are no outliers
+        average_ground = signal.convolve2d(image_result, np.ones((5,5))/25, mode='same' , boundary='symm') # Average in 5x5 squares = 1m²
+        diff_to_average = np.abs(image_result - average_ground) # Should be max less than 0.1m <= 10% of elevation
+        outliers = diff_to_average > 0.1
+        
+        # gradient = np.zeros(image_result.shape)
+        # gradient[:-1,:-1] = np.maximum((image_result[:-1,:] - image_result[1:,:])[:,:-1], (image_result[:,:-1] - image_result[:,1:])[:-1,:])
+        # gradient[:,-1] = gradient[:,-2]
+        # gradient[-1,:] = gradient[-2,:]
+        # gradient[-1,-1] = gradient[-2,-2]
+        # outliers = gradient > 0.1
+
+        # If there is a visualizer function given call it now
+        if visualizer != None:
+            visualizer(i, filled_voxels, diff_to_average, outliers, gnd_heightmap, interpolated_linear, image_result, cloud)
+
+        # If there are no outliers, we are done here
+        if not outliers.any():
+            break
+        
+        # Otherwise, remove the outliers in the original data and run the interpolation again
+        filled_voxels[outliers] = False # Simply mark the squares of the outliers as free
+        logger.debug(f'Remove outliers, rerun ({i})')
+
+    return gnd, image_result

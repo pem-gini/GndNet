@@ -34,10 +34,16 @@ beta: 0.1 # Smoothness loss
 keep_original: false
 num_rotations: 4
 num_height_var: 1
+num_noise_var: 1
 maxFrontSlope: 5
 maxSideTild: 5
 maxRotation: 180
 maxHeight: .5
+noise_coefficient_top: [0,0]
+noise_coefficient_bottom: [0,0.6]
+noise_min_distance: [0, 5]
+noise_density_top: [.1,50]
+noise_density_bottom: [.1,50]
 
 # data prepartaion config
 frame_step: 2

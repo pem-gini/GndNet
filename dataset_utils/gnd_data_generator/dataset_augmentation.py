@@ -6,23 +6,37 @@ import time
 
 
 class AugmentationConfig():
-	def __init__(self, grid, 
+	def __init__(self, grid, voxel_size,
 			  keep_original=False, 
 			  num_rotations = 0, 
 			  num_height_var = 0,
+			  num_noise_aug = 0,
 			  maxFrontSlope = 5, 
 			  maxSideTild = 0, 
 			  maxRotation = 0, 
-			  maxHeight = 0) -> None:
+			  maxHeight = 0,
+			  noise_coefficient_top = (0,0), 
+			  noise_coefficient_bottom = (0.4,0.6), 
+			  noise_min_distance = (1.2, 4), 
+			  noise_density_top = (1,50), 
+			  noise_density_bottom=(1,50)
+			  ) -> None:
 		
-		self.grid = grid
+		self.grid = np.array(grid)
+		self.voxel_size = voxel_size
 		self.keep_original = keep_original
 		self.num_rotations = num_rotations
 		self.num_height_var = num_height_var
+		self.num_noise_aug = num_noise_aug
 		self.maxFrontSlope = maxFrontSlope
 		self.maxSideTild = maxSideTild
 		self.maxRotation = maxRotation
 		self.maxHeight = maxHeight
+		self.noise_coefficient_top = noise_coefficient_top
+		self.noise_coefficient_bottom = noise_coefficient_bottom
+		self.noise_min_distance = noise_min_distance
+		self.noise_density_top = noise_density_top
+		self.noise_density_bottom = noise_density_bottom
 
 		self.num_augmentations = num_rotations + num_height_var + keep_original
 
@@ -55,6 +69,70 @@ class DataAugmentation():
 		
 		return data
 	
+	def addNoise(self, data: 'np.ndarray', gnd_planes: 'np.ndarray'):
+		return self._addNoise(data, gnd_planes, self.config.noise_coefficient_top, self.config.noise_coefficient_bottom, self.config.noise_min_distance, self.config.noise_density_top, self.config.noise_density_bottom)
+	
+	def _addNoise(self, data: 'np.ndarray', gnd_planes: 'np.ndarray', noise_coefficient_top = (0,0), noise_coefficient_bottom = (0.4,0.6), min_distance = (1.2, 4), density_top = (1,50), density_bottom=(1,50)):
+		"""Adds noise to the point cloud and labels it as category 260. The noise will be shaped as a triangle if you look at it from the side.
+		The density is in noisy points per cube meter, everything else is in meter"""
+		
+		# Find the range of the current points
+		grid_range = self.config.grid
+		pc_range = np.empty((data.shape[0],3,3))
+		pc_range[:,:,0] = data[:,:,:3].min(axis=1) # Get the min x,y,z of all points and store it in the first column
+		pc_range[:,:2,1] = grid_range[:2]	# Load the min grid range into the second column
+		pc_range[:,:2,0] = pc_range[:,:2,:2].max(axis=2)  # Take the greater x,y values of the minimum grid range and point cloud to make sure we are not out of index
+
+		pc_range[:,:,1] = data[:,:,:3].max(axis=1) # Get the max x,y,z of all points and store it in the second column
+		pc_range[:,:2,2] = grid_range[2:] # Load the max grid range into the third column
+		pc_range[:,:2,1] = pc_range[:,:2,1:].min(axis=2) # Take the greater x,y values of the max grid range and point cloud to make sure we are not out of index
+
+		# Make sure that the minimum noise distance is either the first measured point or the min distance
+		min_distance = np.random.random() * (min_distance[1]-min_distance[0]) + min_distance[0]
+		pc_range[:,0,0] = np.maximum(pc_range[:,0,0], min_distance)
+
+		min_range = np.empty((3,2))
+		min_range[:,0] = pc_range[:,:,0].max(axis=0)
+		min_range[:,1] = pc_range[:,:,1].min(axis=0)
+
+		noise_cnt = np.zeros(2, dtype=np.uint64)
+
+		# Find the target volume for the noise
+		for i in range(2): # Run everthing for the top (0) and the bottom (1)
+			coefficients = np.array(noise_coefficient_top) if i == 0 else np.array(noise_coefficient_bottom)
+			densities = np.array(density_top) if i == 0 else np.array(density_bottom)
+			# If the lower and upper limits are zero, do not add noise to this side
+			if coefficients[0] == 0 and coefficients[1] == 0:
+				continue
+
+			coefficient = np.random.random() * (coefficients[1]-coefficients[0]) + coefficients[0]
+			density = np.random.random() * (densities[1]-densities[0]) + densities[0]
+			max_x = min_range[0][1]
+
+			# print(f'{i}: Coefficient: {coefficient}, Density: {density}, Min distance: {min_distance}')
+
+			assert min_distance < max_x, "The minimal distance must be less than the distance of the furthest point"
+			area_xz_plane = 0.5 * (max_x - min_distance) * max_x * coefficient
+			volume = area_xz_plane * (min_range[0][1] - min_range[0][0])
+			noise_cnt[i] = int(volume * density)
+		
+		new_data = np.empty((data.shape[0], data.shape[1]+int(noise_cnt.sum()), data.shape[2]))
+		new_data[:,:data.shape[1]] = data # Copy the old data into the new tensor
+
+		for i, factor in enumerate([1, -1]): # Run everthing for the top (1) and the bottom (-1)
+			if noise_cnt[i] == 0: continue
+
+			# Add new random points
+			for j in range(data.shape[0]):
+				new_data[j,data.shape[1]:,:2] = np.random.random((noise_cnt[i], 2)) * (pc_range[j,:2,1]-pc_range[j,:2,0]) + pc_range[j,:2,0]
+				# Find the corresponding grid squares to each random point in the xy plane
+				grid_indices = np.floor((new_data[j,data.shape[1]:,:2] - np.array(grid_range)[:2]) / self.config.voxel_size).astype(np.int32)
+				# Now add the noise below and above the ground plane within each corresponding voxel
+				new_data[j,data.shape[1]:,2] = gnd_planes[j, grid_indices[:,0], grid_indices[:,1]] + np.abs(np.random.normal(0, (new_data[j][data.shape[1]:,0]-pc_range[j,0,0])*coefficient)) * factor # Make sure the noise only lies in the specified half (bottom or top)
+				new_data[j,data.shape[1]:,3] = 260
+
+		return new_data
+ 
 	def augmentRotation(self, data: 'np.ndarray', maxFrontSlope = 5, maxSideTild = 0, maxRotation = 0):
 		# Define max positive rotation
 		theta = np.asarray([maxRotation, maxSideTild, maxFrontSlope])

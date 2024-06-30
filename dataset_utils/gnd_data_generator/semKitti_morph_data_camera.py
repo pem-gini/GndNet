@@ -1,4 +1,4 @@
-use_ros = False
+use_ros = True
 show_ros_intermediate_steps = False
 visualize = False
 export = False
@@ -9,7 +9,6 @@ sys.path.insert(1, '../../..')
 from queue import Queue
 import math
 import concurrent.futures
-import multiprocessing
 import time
 import os
 import yaml
@@ -20,12 +19,12 @@ import numpy as np
 if use_ros:
     from semiKitti_ros_utils import ros_init
 
-import dataset_generator_utils as gnd_utils
+import gnd_net.dataset_utils.gnd_data_generator.dataset_generator_utils as gnd_utils
 
 if visualize:
     import matplotlib.pyplot as plt
 
-from dataset_augmentation import AugmentationConfig, DataAugmentation
+from gnd_net.dataset_utils.gnd_data_generator.dataset_augmentation import AugmentationConfig, DataAugmentation
 
 # import cv2
 
@@ -65,7 +64,7 @@ logger_main.addHandler(fh)
 # pc_range = [0.6, -30, 60.6, 30]
 # grid_size = [0, -30, 60, 30]
 pc_range = cfg.pc_range[:2] + cfg.pc_range[3:5] # select minmax xy
-grid_size = cfg.grid_range
+grid_size = np.array(cfg.grid_range)
 length = int(grid_size[2] - grid_size[0]) # x direction
 width = int(grid_size[3] - grid_size[1])    # y direction
 lidar_height = cfg.lidar_height
@@ -76,11 +75,6 @@ if voxel_dimensions[0] != voxel_dimensions[1]:
     exit(-1)
 voxel_size = voxel_dimensions[0]
 
-logger_main.debug(grid_size)
-logger_main.debug(type(grid_size))
-logger_main.debug(voxel_size)
-logger_main.debug(type(voxel_size))
-
 data_dir = cfg.data_dir
 out_dir = cfg.out_dir
 
@@ -89,135 +83,65 @@ if visualize:
 else:
     fig = None
 
+def gnd_plane_step_visualizer(i, filled_voxels, diff_to_average, outliers, gnd_heightmap, interpolated_linear, image_result, cloud):
+    if i > 0 and show_ros_intermediate_steps:
+        time.sleep(10)
 
-def process_cloud(cloud, logger=logging.root):
-    # start = time.time()
-    # remove all non ground points; gnd labels = [40, 44, 48, 49]
-    # gnd, obs = segment_cloud(cloud,[40, 44, 48, 49])
-    # A complete list of all labels: https://github.com/PRBonn/semantic-kitti-api/blob/master/config/semantic-kitti.yaml
-    gnd, obs = gnd_utils.segment_cloud(cloud,[40, 44, 48, 49,60,72]) # ['road', 'parking', 'sidewalk', 'other-ground', 'lane-marking', 'terrain'] 
-    global visualize, grid_size, voxel_size, lidar_height, show_ros_intermediate_steps
+        fig.clear()
 
-    grid_size_np = np.asarray(grid_size)
-    #gnd_img = gnd_utils.lidar_to_img(np.copy(gnd), grid_size_np, voxel_size, fill = 1, lidar_height=lidar_height)
-    gnd_heightmap, heightmap, num_points = gnd_utils.lidar_to_heightmap(np.copy(gnd), grid_size_np, voxel_size, max_points = 100, lidar_height=lidar_height)
+        fig.add_subplot(2, 3, 1)
+        cs = plt.imshow(filled_voxels, interpolation='nearest')
+        fig.colorbar(cs)
 
-    filled_voxels = num_points!=0
-    gnd_heightmap = np.divide(gnd_heightmap, num_points, where=filled_voxels)
+        fig.add_subplot(2, 3, 2)
+        cs = plt.imshow(diff_to_average, interpolation='nearest')
+        fig.colorbar(cs)
 
-    if export:
-        np.save('heightmap', gnd_heightmap)
-        np.save('heightmap_raw', heightmap)
-        np.save('num_points', num_points)
+        fig.add_subplot(2, 3, 3)
+        cs = plt.imshow(outliers, interpolation='nearest')
+        fig.colorbar(cs)
 
+        # fig.add_subplot(2, 3, 2)
+        # plt.imshow(gnd_img_dil, interpolation='nearest')
 
-    # Interpolate missing spots
-    for i in range(10): # Max 3 runs
-        y,x = np.where(filled_voxels)
-        interpL = LinearNDInterpolator(list(zip(y,x)), gnd_heightmap[y,x])
-        xx = np.arange(gnd_heightmap.shape[0])
-        yy = np.arange(gnd_heightmap.shape[1])
-        X, Y = np.meshgrid(xx, yy, indexing='ij')
-        interpolated_linear = interpL(X,Y)
+        # fig.add_subplot(2, 3, 3)
+        # plt.imshow(mask, interpolation='nearest')
+
+        fig.add_subplot(2, 3, 4)
+        cs = plt.imshow(gnd_heightmap, interpolation='nearest')
+        fig.colorbar(cs)
+        
+        fig.add_subplot(2, 3, 5)
+        cs = plt.imshow(interpolated_linear, interpolation='nearest')
+        fig.colorbar(cs)
+
+        # image_result = inpaint.inpaint_biharmonic(image_result, mask)
+        # image_result = cv2.dilate(image_result,kernel,iterations = 1)
+
+        # kernel = np.array([[0,1,0],
+        #                    [1,0,1],
+        #                    [0,1,0]])
+        # kernel = np.ones((7,7),np.uint8)
+        # kernel[3,3] = 0
+        # ind = mask == 1
+
+        # for i in range(10):
+        #     conv_out = signal.convolve2d(gnd_heightmap, kernel, boundary='wrap', mode='same')/kernel.sum()
+        #     gnd_heightmap[ind] = conv_out[ind]
+
+        fig.add_subplot(2, 3, 6)
+        cs = plt.imshow(image_result, interpolation='nearest')
+        cbar = fig.colorbar(cs)
+        plt.show(block=False)
+        fig.canvas.flush_events()
+        # cbar.remove()
     
-        empty_voxels = np.ma.masked_invalid(interpolated_linear).mask
-        y,x = np.where(np.logical_not(empty_voxels))
-        interpQ = NearestNDInterpolator(list(zip(y,x)), interpolated_linear[y,x])
-
-        y,x=np.where(empty_voxels)
-        image_result = np.copy(interpolated_linear)
-        image_result[y,x] = np.nan_to_num(interpQ(y,x))
-
-        # Make sure there are no outliers
-        average_ground = signal.convolve2d(image_result, np.ones((5,5))/25, mode='same' , boundary='symm') # Average in 5x5 squares = 1m²
-        diff_to_average = np.abs(image_result - average_ground) # Should be max less than 0.1m <= 10% of elevation
-        outliers = diff_to_average > 0.1
-        
-        # gradient = np.zeros(image_result.shape)
-        # gradient[:-1,:-1] = np.maximum((image_result[:-1,:] - image_result[1:,:])[:,:-1], (image_result[:,:-1] - image_result[:,1:])[:-1,:])
-        # gradient[:,-1] = gradient[:,-2]
-        # gradient[-1,:] = gradient[-2,:]
-        # gradient[-1,-1] = gradient[-2,-2]
-        # outliers = gradient > 0.1
-
-        if visualize:
-            if i > 0 and show_ros_intermediate_steps:
-                 time.sleep(10)
-
-            fig.clear()
-
-            fig.add_subplot(2, 3, 1)
-            cs = plt.imshow(filled_voxels, interpolation='nearest')
-            fig.colorbar(cs)
-
-            fig.add_subplot(2, 3, 2)
-            cs = plt.imshow(diff_to_average, interpolation='nearest')
-            fig.colorbar(cs)
-
-            fig.add_subplot(2, 3, 3)
-            cs = plt.imshow(outliers, interpolation='nearest')
-            fig.colorbar(cs)
-
-            # fig.add_subplot(2, 3, 2)
-            # plt.imshow(gnd_img_dil, interpolation='nearest')
-
-            # fig.add_subplot(2, 3, 3)
-            # plt.imshow(mask, interpolation='nearest')
-
-            fig.add_subplot(2, 3, 4)
-            cs = plt.imshow(gnd_heightmap, interpolation='nearest')
-            fig.colorbar(cs)
-            
-            fig.add_subplot(2, 3, 5)
-            cs = plt.imshow(interpolated_linear, interpolation='nearest')
-            fig.colorbar(cs)
-
-            # image_result = inpaint.inpaint_biharmonic(image_result, mask)
-            # image_result = cv2.dilate(image_result,kernel,iterations = 1)
-
-            # kernel = np.array([[0,1,0],
-            #                    [1,0,1],
-            #                    [0,1,0]])
-            # kernel = np.ones((7,7),np.uint8)
-            # kernel[3,3] = 0
-            # ind = mask == 1
-
-            # for i in range(10):
-            #     conv_out = signal.convolve2d(gnd_heightmap, kernel, boundary='wrap', mode='same')/kernel.sum()
-            #     gnd_heightmap[ind] = conv_out[ind]
-
-            fig.add_subplot(2, 3, 6)
-            cs = plt.imshow(image_result, interpolation='nearest')
-            cbar = fig.colorbar(cs)
-            plt.show(block=False)
-            fig.canvas.flush_events()
-            # cbar.remove()
-        
-        # This is definitely not a nice way to handle this, but it works for debugging purposes
-        if show_ros_intermediate_steps and data_generator_ref != None:
-            cloud2 = cloud.copy()
-            seg = gnd_utils.semantically_segment_cloud(cloud2.copy(), grid_size_np, voxel_size, image_result, lidar_height)
-            cloud2[:,2] += lidar_height
-            data_generator_ref.node.show_step(cloud2, seg, image_result.T)
-
-        # If there are no outliers, we are done here
-        if not outliers.any():
-            break
-        
-        # Otherwise, remove the outliers in the original data and run the interpolation again
-        filled_voxels[outliers] = False # Simply mark the squares of the outliers as free
-        logger.info(f'Remove outliers, rerun ({i})')
-
-    # kernel = np.ones((5,5),np.uint8)
-    # gnd_img_dil = cv2.dilate(gnd_img,kernel,iterations = 2)
-    # mask = gnd_img_dil - gnd_img
-    # inpaint_result = inpaint.inpaint_biharmonic(gnd_heightmap, mask)
-    #conv_kernel = np.ones((3,3))
-    #image_result = signal.convolve2d(image_result_2, conv_kernel, boundary='wrap', mode='valid')/conv_kernel.sum()
-    seg = gnd_utils.semantically_segment_cloud(cloud.copy(), grid_size_np, voxel_size, image_result, lidar_height)
-
-    return gnd, image_result.T, seg
-
+    # This is definitely not a nice way to handle this, but it works for debugging purposes
+    if show_ros_intermediate_steps and data_generator_ref != None:
+        cloud2 = cloud.copy()
+        seg = gnd_utils.semantically_segment_cloud(cloud2.copy(), grid_size, voxel_size, image_result, lidar_height)
+        cloud2[:,2] += lidar_height
+        data_generator_ref.node.show_step(cloud2, seg, image_result.T)
 
 
 class KittiSemanticDataGenerator():
@@ -246,14 +170,20 @@ class KittiSemanticDataGenerator():
 
         self.augmentationConfig = AugmentationConfig(
             grid=grid_size,
+            voxel_size=voxel_size,
             keep_original=cfg.keep_original,
             num_rotations=cfg.num_rotations,
             num_height_var = cfg.num_height_var,
+            num_noise_aug= cfg.num_noise_var,
             maxFrontSlope = cfg.maxFrontSlope, 
             maxSideTild = cfg.maxSideTild, 
             maxRotation = cfg.maxRotation, 
-            maxHeight = cfg.maxHeight
-            
+            maxHeight = cfg.maxHeight,
+            noise_coefficient_top = cfg.noise_coefficient_top,
+            noise_coefficient_bottom = cfg.noise_coefficient_bottom,
+            noise_min_distance = cfg.noise_min_distance,
+            noise_density_top = cfg.noise_density_top,
+            noise_density_bottom = cfg.noise_density_bottom,
         )
         self.augmentation = DataAugmentation(self.augmentationConfig)
 
@@ -264,7 +194,7 @@ class KittiSemanticDataGenerator():
 
     def get_next_frame(self):
         # If there are no new frames loaded, load the next ones
-        if self.loaded_frames.empty():
+        while self.loaded_frames.empty():
             if not self.kitti_semantic_data_generate(): # If we already reached the last one, return None
                 self.complete = True
                 return (None, None, None)
@@ -276,6 +206,7 @@ class KittiSemanticDataGenerator():
             self.kitti_semantic_data_generate()
     
     def kitti_semantic_data_generate(self):
+        global cfg, lidar_height
         current_frame = self.current_frame
 
         # Increase the frame cnt and cancle timer if we reached the end
@@ -292,10 +223,13 @@ class KittiSemanticDataGenerator():
         label = label.reshape((-1))
         if label.shape[0] == points.shape[0]:
             sem_label = label & 0xFFFF  # semantic label in lower half
+        if label.shape[0] != points.shape[0]:
+            self.logger.warning(f'Number of points and labels to not match! ({label.shape[0]} vs {points.shape[0]})')#
+            return True # Just skip this after printing the warning
         label = np.expand_dims(label, axis = 1)
         points = np.concatenate((points,label), axis = 1)
 
-        # Makes all neccessary augmentations, and will return the frame as multiple differently augmented frames
+        # Makes all necessary augmentations, and will return the frame as multiple differently augmented frames
         augmentations = self.augmentation.getAugmentedData(points.reshape((1,)+points.shape))
         num_augmentations = augmentations.shape[0]
         for i in range(num_augmentations):
@@ -303,18 +237,25 @@ class KittiSemanticDataGenerator():
             if self.logger != None:
                 self.logger.info(f'Frame {current_frame} with augmentation {i+1}/{num_augmentations}')
 
-            ground_cloud, gnd_label, seg = process_cloud(augmentations[i], logger=self.logger)
-            # cloud = process_cloud(points)
+            # Get all points that are labels as ground and compute the ground plane 
+            visualizer = gnd_plane_step_visualizer if visualize else None
+            gnd_pcl, gnd_plane = gnd_utils.compute_ground_plane(augmentations[i], grid_size, voxel_size, lidar_height, export_intermediate_step=export, logger=self.logger, visualizer=visualizer)
+
+            gnd_plane_t = gnd_plane.T
+            # Add noise to the pointcloud 
+            augmentation = self.augmentation.addNoise(augmentations[i].reshape((1,)+augmentations[i].shape), gnd_plane_t.reshape((1,)+gnd_plane_t.shape))[0]
+
+            # Segment the entire cloud into ground, obstacle and out of bound
+            seg = gnd_utils.semantically_segment_cloud(augmentation.copy(), grid_size, voxel_size, gnd_plane, lidar_height)
 
             # points += np.array([0,0,lidar_height,0,0], dtype=np.float32)
             # points[0,2] += lidar_height
 
-            global cfg, lidar_height
             if cfg.shift_cloud:
-                augmentations[i,:,2] += lidar_height
+                augmentation[:,2] += lidar_height
                 #self.cloud[:,2] += lidar_height
             
-            self.loaded_frames.put((augmentations[i], gnd_label, seg))
+            self.loaded_frames.put((augmentation, gnd_plane_t, seg))
 
         return True
 
