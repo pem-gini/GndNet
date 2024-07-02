@@ -226,23 +226,27 @@ class GndNetNode(Node):
         # cloud_process = time.time()
         # print("cloud_process: ", cloud_process - np_conversion)
         # self.log('Run prediction')
-        with torch.no_grad():
-                output = self.model(voxels, coors, num_points)
-                # model_time = time.time()
-                # print("model_time: ", model_time - cloud_process)
+        output = None
+        try:
+            with torch.no_grad():
+                    output = self.model(voxels, coors, num_points)
+                    # model_time = time.time()
+                    # print("model_time: ", model_time - cloud_process)
 
-        # self.log('Segment cloud')
-        pred_GndSeg, cloud_obs = segment_cloud_noground(cloud.copy(), cloud.copy(), np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
-
+            # self.log('Segment cloud')
+            pred_GndSeg, cloud_obs = segment_cloud_noground(cloud.copy(), cloud.copy(), np.asarray(self.cfg.grid_range), self.cfg.voxel_size[0], elevation_map = output.cpu().numpy().T, threshold = 0.16)
+        except Exception as e:
+            print(e)
         # seg_time = time.time()
         # print("seg_time: ", seg_time - model_time )
         # print("total_time: ", seg_time - np_conversion)
         # print()
         # pdb.set_trace()
         # self.log('Publish results')
-        gnd_marker_pub(self, output.cpu().numpy(), self.pubGroundPlane, self.cfg, color = (175,175,175), frame_id=self.targetFrame)
-        np2ros_pub_2(self, cloud, self.pubSegmentedPointcloud, None, pred_GndSeg, self.targetFrame)
-        np2ros_pub_2_no_intensity(self, cloud_obs, self.pubPclNoGround, self.targetFrame)
+        if output != None:
+            gnd_marker_pub(self, output.cpu().numpy(), self.pubGroundPlane, self.cfg, color = (175,175,175), frame_id=self.targetFrame)
+            np2ros_pub_2(self, cloud, self.pubSegmentedPointcloud, None, pred_GndSeg, self.targetFrame)
+            np2ros_pub_2_no_intensity(self, cloud_obs, self.pubPclNoGround, self.targetFrame)
         # vis_time = time.time()
         # print("vis_time: ", vis_time - model_time)
 
