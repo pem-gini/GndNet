@@ -108,7 +108,7 @@ else:
 rclpy.init(args=sys.argv)
 node = rclpy.create_node('gnd_data_provider')
 pcl_pub = node.create_publisher(PointCloud2, "/kitti/velo/pointcloud", 10)
-marker_pub_gnd_truth = node.create_publisher(Marker, "/kitti/ground_marker", 10)
+marker_pub_gnd_truth = node.create_publisher(Marker, "/kitti/gnd_marker_gnd_truth", 10)
 
 
 
@@ -165,12 +165,12 @@ def predict_ground(pcl_file: str, labels_file: str):
             lidar_height=0, # We already moved the entire cloud to zero
         )
 
-        augmented_points = augmentation.addNoise(augmented_points, gnd_plane.reshape((1,)+gnd_plane.shape))
+        augmented_points = augmentation.addNoise(augmented_points[0], gnd_plane)
 
-        augmented_points = gnd_utils.extract_pc_in_box2d(augmented_points[0], cfg.grid_range)
+        augmented_points = gnd_utils.extract_pc_in_box2d(augmented_points, cfg.grid_range)
 
         # random sample point cloud to specified number of points
-        #augmented_points = gnd_utils.random_sample_numpy(augmented_points, N = cfg.num_points)
+        augmented_points = gnd_utils.random_sample_numpy(augmented_points, N = 10000)
 
 
         # pred_GndSeg = segment_cloud(points_.copy(),np.asarray(cfg.grid_range), cfg.voxel_size[0], elevation_map = ground_truth_.T, threshold = 0.08)

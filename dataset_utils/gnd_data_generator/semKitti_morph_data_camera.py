@@ -243,7 +243,7 @@ class KittiSemanticDataGenerator():
 
             gnd_plane_t = gnd_plane.T
             # Add noise to the pointcloud 
-            augmentation = self.augmentation.addNoise(augmentations[i].reshape((1,)+augmentations[i].shape), gnd_plane_t.reshape((1,)+gnd_plane_t.shape))[0]
+            augmentation = self.augmentation.addNoise(augmentations[i], gnd_plane_t)
 
             # Segment the entire cloud into ground, obstacle and out of bound
             seg = gnd_utils.semantically_segment_cloud(augmentation.copy(), grid_size, voxel_size, gnd_plane, lidar_height)

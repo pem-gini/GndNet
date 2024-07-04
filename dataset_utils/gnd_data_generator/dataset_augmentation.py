@@ -72,28 +72,28 @@ class DataAugmentation():
 	def addNoise(self, data: 'np.ndarray', gnd_planes: 'np.ndarray'):
 		return self._addNoise(data, gnd_planes, self.config.noise_coefficient_top, self.config.noise_coefficient_bottom, self.config.noise_min_distance, self.config.noise_density_top, self.config.noise_density_bottom)
 	
-	def _addNoise(self, data: 'np.ndarray', gnd_planes: 'np.ndarray', noise_coefficient_top = (0,0), noise_coefficient_bottom = (0.4,0.6), min_distance = (1.2, 4), density_top = (1,50), density_bottom=(1,50)):
+	def _addNoise(self, data: 'np.ndarray', gnd_plane: 'np.ndarray', noise_coefficient_top = (0,0), noise_coefficient_bottom = (0.4,0.6), min_distance = (1.2, 4), density_top = (1,50), density_bottom=(1,50)):
 		"""Adds noise to the point cloud and labels it as category 260. The noise will be shaped as a triangle if you look at it from the side.
 		The density is in noisy points per cube meter, everything else is in meter"""
 		
 		# Find the range of the current points
 		grid_range = self.config.grid
-		pc_range = np.empty((data.shape[0],3,3))
-		pc_range[:,:,0] = data[:,:,:3].min(axis=1) # Get the min x,y,z of all points and store it in the first column
-		pc_range[:,:2,1] = grid_range[:2]	# Load the min grid range into the second column
-		pc_range[:,:2,0] = pc_range[:,:2,:2].max(axis=2)  # Take the greater x,y values of the minimum grid range and point cloud to make sure we are not out of index
+		pc_range = np.empty((3,3))
+		pc_range[:,0] = data[:,:3].min(axis=0) # Get the min x,y,z of all points and store it in the first column
+		pc_range[:2,1] = grid_range[:2]	# Load the min grid range into the second column
+		pc_range[:2,0] = pc_range[:2,:2].max(axis=1)  # Take the greater x,y values of the minimum grid range and point cloud to make sure we are not out of index
 
-		pc_range[:,:,1] = data[:,:,:3].max(axis=1) # Get the max x,y,z of all points and store it in the second column
-		pc_range[:,:2,2] = grid_range[2:] # Load the max grid range into the third column
-		pc_range[:,:2,1] = pc_range[:,:2,1:].min(axis=2) # Take the greater x,y values of the max grid range and point cloud to make sure we are not out of index
+		pc_range[:,1] = data[:,:3].max(axis=0) # Get the max x,y,z of all points and store it in the second column
+		pc_range[:2,1] = grid_range[2:] # Load the max grid range into the third column
+		#pc_range[:,:2,1] = pc_range[:,:2,1:].min(axis=2) # Take the greater x,y values of the max grid range and point cloud to make sure we are not out of index
 
 		# Make sure that the minimum noise distance is either the first measured point or the min distance
 		min_distance = np.random.random() * (min_distance[1]-min_distance[0]) + min_distance[0]
-		pc_range[:,0,0] = np.maximum(pc_range[:,0,0], min_distance)
+		pc_range[0,0] = np.maximum(pc_range[0,0], min_distance)
 
-		min_range = np.empty((3,2))
-		min_range[:,0] = pc_range[:,:,0].max(axis=0)
-		min_range[:,1] = pc_range[:,:,1].min(axis=0)
+		min_range = pc_range #np.empty((3,2))
+		# min_range[0] = pc_range[:,0]
+		# min_range[1] = pc_range[:,1]
 
 		noise_cnt = np.zeros(2, dtype=np.uint64)
 
@@ -119,20 +119,22 @@ class DataAugmentation():
 			volume = area_xz_plane * (min_range[0][1] - min_range[0][0])
 			noise_cnt[i] = int(volume * density)
 		
-		new_data = np.empty((data.shape[0], data.shape[1]+int(noise_cnt.sum()), data.shape[2]))
-		new_data[:,:data.shape[1]] = data # Copy the old data into the new tensor
+		cut_off_back = 10 - np.random.random() * 3
+		padding_coefficient = np.abs(np.random.normal(0, 1)) / pc_range[0,1]
+		valid_data = data[data[:,0] <= cut_off_back]
+		new_data = np.empty((valid_data.shape[0]+int(noise_cnt.sum()), data.shape[1]))
+		new_data[:valid_data.shape[0]] = valid_data # Copy the old data into the new tensor
 
 		for i, factor in enumerate([1, -1]): # Run everthing for the top (1) and the bottom (-1)
 			if noise_cnt[i] == 0: continue
 
 			# Add new random points
-			for j in range(data.shape[0]):
-				new_data[j,data.shape[1]:,:2] = np.random.random((noise_cnt[i], 2)) * (pc_range[j,:2,1]-pc_range[j,:2,0]) + pc_range[j,:2,0]
-				# Find the corresponding grid squares to each random point in the xy plane
-				grid_indices = np.floor((new_data[j,data.shape[1]:,:2] - np.array(grid_range)[:2]) / self.config.voxel_size).astype(np.int32)
-				# Now add the noise below and above the ground plane within each corresponding voxel
-				new_data[j,data.shape[1]:,2] = gnd_planes[j, grid_indices[:,0], grid_indices[:,1]] + np.abs(np.random.normal(0, (new_data[j][data.shape[1]:,0]-pc_range[j,0,0])*coefficient)) * factor # Make sure the noise only lies in the specified half (bottom or top)
-				new_data[j,data.shape[1]:,3] = 260
+			new_data[valid_data.shape[0]:,:2] = np.random.random((noise_cnt[i], 2)) * (pc_range[:2,1]-pc_range[:2,0]) + pc_range[:2,0]
+			# Find the corresponding grid squares to each random point in the xy plane
+			grid_indices = np.floor((new_data[valid_data.shape[0]:,:2] - np.array(grid_range)[:2]) / self.config.voxel_size).astype(np.int32)
+			# Now add the noise below and above the ground plane within each corresponding voxel
+			new_data[valid_data.shape[0]:,2] = gnd_plane[grid_indices[:,0], grid_indices[:,1]] - padding_coefficient * new_data[valid_data.shape[0]:,0] + np.abs(np.random.normal(0, (new_data[valid_data.shape[0]:,0]-pc_range[0,0])*coefficient)) * factor # Make sure the noise only lies in the specified half (bottom or top)
+			new_data[valid_data.shape[0]:,3] = 260
 
 		return new_data
  
