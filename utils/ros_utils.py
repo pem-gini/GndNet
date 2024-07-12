@@ -26,8 +26,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import PointCloud2, PointField
 import std_msgs.msg
+
 from visualization_msgs.msg import Marker,MarkerArray
 from geometry_msgs.msg import Point
 
@@ -74,7 +75,11 @@ def gnd_marker_pub(ros_node, gnd_label, marker_pub, cfg, color = "red", frame_id
     x_step = length / gnd_label.shape[0]
     y_step = width / gnd_label.shape[1]
     for j in range(gnd_label.shape[0]):
+        if j % 4 != 0:
+            continue
         for i in range(gnd_label.shape[1]):
+            if i % 4 != 0:
+                continue
             pt1 = Point()
             pt1.x = float(i*x_step + cfg.grid_range[0])
             pt1.y = float(j*y_step + cfg.grid_range[1])
@@ -201,3 +206,43 @@ def np2ros_pub_2_no_intensity(ros_node, points, pcl_pub, frame_id = "map"):
     cloud_msg = ros2_numpy.msgify(PointCloud2, points_arr,stamp =timestamp, frame_id=frame_id)
     # rospy.loginfo("happily publishing sample pointcloud.. !")
     pcl_pub.publish(cloud_msg)
+
+def array_to_pointcloud2(array, header, colors=np.empty((0,3))):
+    # Create a PointCloud2 message
+    pc_msg = PointCloud2()
+    pc_msg.header = header
+    pc_msg.width = array.shape[0]
+    pc_msg.height = 1
+    pc_msg.is_bigendian = False
+    pc_msg.is_dense = True  # Set to True if there are no invalid points
+    if colors.any():
+        # Scale the normalized RGB values to 0-255 and convert to uint8
+        red = colors[:,0]
+        green = colors[:,1]
+        blue = colors[:,2]
+        # Pack RGB values into a single float32 with bit shift
+        packed_rgb = (red.astype(np.uint32) << 16) | (green.astype(np.uint32) << 8) | blue.astype(np.uint32)
+        # color = packed_rgb
+        pc_msg.fields = [
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            PointField(name='rgb', offset=12, datatype=PointField.FLOAT32, count=1),
+        ]
+        pc_msg.point_step = 16  # Size of one point in bytes (4 floats)
+        # array = np.concatenate((array, colors), axis=1)
+        array = np.column_stack((array, packed_rgb.view(dtype=np.float32)))
+    else:
+        pc_msg.fields = [
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+        ]
+        pc_msg.point_step = 12  # Size of one point in bytes (3 floats)
+
+    pc_msg.row_step = pc_msg.point_step * pc_msg.width
+    # Convert the XYZ NumPy array to a byte array and assign it to pc_msg.data
+    ### pc_msg.data calls an internal setter function ,which is SLOW AS FUCK .. .HOLY SHIT THIS IS BAD
+    ### we set the underlying member directly instead, which speeds things up by like 46 times
+    pc_msg._data = array.tostring()
+    return pc_msg
