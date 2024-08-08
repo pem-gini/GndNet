@@ -4,6 +4,12 @@ import copy
 
 import numba as nb
 
+
+###numby precompile
+from numba.pycc import CC
+cc = CC("transform_module")
+cc.verbose = True
+
 def euler_from_quaternion(q):
     return euler_from_qxqyqzqw(q.x, q.y, q.z, q.w)
 
