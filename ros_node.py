@@ -52,51 +52,104 @@ class InferenceThread(threading.Thread):
     def __init__(self, model, cfg):
         super().__init__()
         self.model = model
+        self.hasModel = model != None
         self.cfg = cfg
         self.daemon = True
         self.output = None
         self.mutex = threading.Lock()
         self.running = True
         self.clearInputs()
+
+    def transformCuda(self, voxels, coors, num_points):
+        voxels = torch.from_numpy(voxels).float().cuda()
+        coors = torch.from_numpy(coors)
+        coors = F.pad(coors, (1,0), 'constant', 0).float().cuda()
+        num_points = torch.from_numpy(num_points).float().cuda()
+        return voxels, coors, num_points
+    def transformCpu(self, voxels, coors, num_points):
+        voxels = torch.from_numpy(voxels).float().cpu() 
+        coors = torch.from_numpy(coors)
+        coors = F.pad(coors, (1,0), 'constant', 0).float().cpu()
+        num_points = torch.from_numpy(num_points).float().cpu()
+        return voxels, coors, num_points
+        
+    def dryrun(self, tensorTransformFunc):
+        # Define the grid size
+        # cloud = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]])
+
+        # Create a static plane with the height zero
+        x_values = np.arange(-10, 10, 0.35)
+        y_values = np.arange(-10, 10, 0.35)
+        x_grid, y_grid = np.meshgrid(x_values, y_values)
+        x_flat = x_grid.flatten()
+        y_flat = y_grid.flatten()
+        z_flat = np.zeros_like(x_flat)
+        cloud = np.stack((x_flat, y_flat, z_flat), axis=-1).astype(np.float32)
+
+        print(f'inference-thread: start dry run')
+        ### do inference stuff
+        start = time.time()
+        # self.log('Voxilize point cloud')
+        voxels, coors, num_points = points_to_voxel(cloud, self.cfg.voxel_size, self.cfg.pc_range, self.cfg.max_points_voxel, True, self.cfg.max_voxels)
+        voxels, coors, num_points = tensorTransformFunc(voxels, coors, num_points)
+        dt1 = time.time() - start
+        if self.hasModel != None:
+            try:
+                with torch.no_grad():
+                    self.output = self.model(voxels, coors, num_points)
+            except Exception as e:
+                print(e)
+            dt2 = time.time() - start
+            # print("dt: %s" % (dt))
+            #print(f'end dry run: {dt1} | {dt2-dt1}')
+            return
+        
+        #print(f'end dry run without model: {dt1}')
+
+        # Wait until the model is available and rerun the dryrun to also compile all functions within the model
+        while not self.hasModel:
+            time.sleep(0.05)
+        self.dryrun()
+
     def run(self):
-        def transformCuda(voxels, coors, num_points):
-            voxels = torch.from_numpy(voxels).float().cuda()
-            coors = torch.from_numpy(coors)
-            coors = F.pad(coors, (1,0), 'constant', 0).float().cuda()
-            num_points = torch.from_numpy(num_points).float().cuda()
-            return voxels, coors, num_points
-        def transformCpu(voxels, coors, num_points):
-            voxels = torch.from_numpy(voxels).float().cpu() 
-            coors = torch.from_numpy(coors)
-            coors = F.pad(coors, (1,0), 'constant', 0).float().cpu()
-            num_points = torch.from_numpy(num_points).float().cpu()
-            return voxels, coors, num_points
+
         cudaEnabled = torch.cuda.is_available()
-        tensorTransformFunc = lambda v,c,n: transformCuda(v,c,n)
+        tensorTransformFunc = lambda v,c,n: self.transformCuda(v,c,n)
         if not cudaEnabled: 
-            tensorTransformFunc = lambda v,c,n: transformCpu(v,c,n)
+            tensorTransformFunc = lambda v,c,n: self.transformCpu(v,c,n)
+
+        self.dryrun(tensorTransformFunc)
+        print('inference-thread: Finished dryrun, start listening for inferences')
         while self.running:
             with self.mutex:
                 cloud = self.input_image_buf_1
             if cloud.any():
+                #print(f'start inference {cloud.shape}')
                 ### do inference stuff
                 start = time.time()
                 # self.log('Voxilize point cloud')
                 voxels, coors, num_points = points_to_voxel(cloud, self.cfg.voxel_size, self.cfg.pc_range, self.cfg.max_points_voxel, True, self.cfg.max_voxels)
+                #dt3 = time.time() - start
                 voxels, coors, num_points = tensorTransformFunc(voxels, coors, num_points)
                 output = None
+                #dt1 = time.time() - start
                 try:
                     with torch.no_grad():
                         self.output = self.model(voxels, coors, num_points)
                 except Exception as e:
                     print(e)
-                dt = time.time() - start
+                #dt2 = time.time() - start
                 # print("dt: %s" % (dt))
+                #print(f'end inference: {dt3} {dt1-dt3} | {dt2-dt1}')
             else:
                 ### safety delay for thread to not run amok
                 time.sleep(0.001)
     def stop(self):
         self.running = False
+    def setModel(self, model):
+        print('Set inference model')
+        self.hasModel = True
+        self.model = model
     def setInputs(self, x):
         with self.mutex:
             self.input_image_buf_1 = x.copy()
@@ -142,22 +195,27 @@ class GndNetNode(Node):
                 self.__dict__.update(entries)
         self.cfg = ConfigClass(**config_dict) # convert python dict to class for ease of use
         self.cfg.batch_size = 1 # Always set it to one
-        # Load model into memory/GPU
-        model = self.loadModel(self.cfg)
+
         #################################################
         ### inference thread
-        self.inference = InferenceThread(model, self.cfg)
+        self.inference = InferenceThread(None, self.cfg)
         self.inference.start()
         #################################################
+        # Load model into memory/GPU
+        model = self.loadModel(self.cfg)
+        self.inference.setModel(model)
         # Buffer current coordinate frame transformations
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        # Trigger first compilation of the transformation
+        self.transform_dryrun()
         # Create publishers
         self.pubGroundPlane = self.create_publisher(Marker, self.topicGroundPlane, 1)
         self.pubSegmentedPointcloud = self.create_publisher(PointCloud2, self.topicSegmentedPointcloud, 1)
         self.pubPclNoGround = self.create_publisher(PointCloud2, self.topicPclNoGround, 1)
         # Create subscriber
         self.create_subscription(PointCloud2, self.topicPointCloud, self.callback, 1)
+
     def destroy_node(self):
         self.inference.stop()
         super().destroy_node()    
@@ -189,6 +247,31 @@ class GndNetNode(Node):
         else:
             print("=> no checkpoint found at '{}'".format(checkpoint_path))
         return model.eval() # Switch to evaluation mode
+    
+    def transform_dryrun(self):
+        print('Start transformation dryrun')
+        start = time.time()
+        try:
+            # Define a static cloud of a couple of points#
+            cloud = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]])
+
+            # A static translation + rotation quaternion
+            ts = tf2_ros.TransformStamped()
+            ts.transform.translation.x = 1.0
+            ts.transform.translation.y = 1.0
+            ts.transform.translation.z = 1.0
+            ts.transform.rotation.x = 0.25
+            ts.transform.rotation.y = 0.25
+            ts.transform.rotation.z = 0.25
+            ts.transform.rotation.w = 0.25
+            trafo = transform.transformStampedToTransformationMatrix(ts)
+            cloud = transform.transformCloud(cloud, trafo)
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            self.error('Error during transform dryrun')
+            return
+        
+        print(f'Finish transformation dryrun {time.time()-start}')
+
     def callback(self, cloud_msg):
         ### convert cloud to numpy
         cloud = cloud_msg_to_numpy(cloud_msg, 0, shift_cloud = False)["xyz"]
