@@ -15,6 +15,7 @@ from gnd_net.model import GroundEstimatorNet
 from gnd_net.utils.point_cloud_ops import points_to_voxel
 from gnd_net.utils.utils import cloud_msg_to_numpy, segment_cloud, segment_cloud_noground
 from gnd_net.utils.ros_utils import np2ros_pub_2, gnd_marker_pub, np2ros_pub_2_no_intensity
+from gnd_net.utils import transform
 # import ipdb as pdb
 
 # Ros Includes
@@ -180,26 +181,29 @@ class GndNetNode(Node):
 
         if self.targetFrame != cloud_msg.header.frame_id:
             try:
-                transform = self.tf_buffer.lookup_transform(self.targetFrame, cloud_msg.header.frame_id, self.get_clock().now().to_msg())
+                ts = self.tf_buffer.lookup_transform(self.targetFrame, cloud_msg.header.frame_id, cloud_msg.header.stamp)
+                trafo = transform.transformStampedToTransformationMatrix(ts)
+                cloud = transform.transformCloud(cloud, trafo)
             except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
                 self.error('Error looking up transform')
                 return
-        
-            # Transform the cloud. Code from tf2_sensor_msgs package: https://github.com/ros2/geometry2/blob/rolling/tf2_sensor_msgs/tf2_sensor_msgs/tf2_sensor_msgs.py
-            rotation = R.from_quat(np.array([
-                transform.transform.rotation.x,
-                transform.transform.rotation.y,
-                transform.transform.rotation.z,
-                transform.transform.rotation.w,
-            ]))
-            rotation_matrix = R.as_matrix(rotation)
-            translation = np.array([
-                transform.transform.translation.x,
-                transform.transform.translation.y,
-                transform.transform.translation.z,
-            ])
 
-            cloud = np.einsum('ij, pj -> pi', rotation_matrix, cloud) + translation
+            ### this is garbage :p
+            # # Transform the cloud. Code from tf2_sensor_msgs package: https://github.com/ros2/geometry2/blob/rolling/tf2_sensor_msgs/tf2_sensor_msgs/tf2_sensor_msgs.py
+            # rotation = R.from_quat(np.array([
+            #     transform.transform.rotation.x,
+            #     transform.transform.rotation.y,
+            #     transform.transform.rotation.z,
+            #     transform.transform.rotation.w,
+            # ]))
+            # rotation_matrix = R.as_matrix(rotation)
+            # translation = np.array([
+            #     transform.transform.translation.x,
+            #     transform.transform.translation.y,
+            #     transform.transform.translation.z,
+            # ])
+            # cloud = np.einsum('ij, pj -> pi', rotation_matrix, cloud) + translation
+
         # np_conversion = time.time()
         # print("np_conversion_time: ", np_conversion- start_time)
 
