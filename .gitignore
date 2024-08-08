@@ -9,3 +9,6 @@ checkpoint.pth.tar
 model_best.pth.tar
 trained_models/training*
 output.*.txt
+
+### numba precompiles
+utils/*.so
